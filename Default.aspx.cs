@@ -1,10 +1,11 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Web;
+using System.Web.Services;
 using System.Web.UI;
 using System.Web.UI.WebControls;
-using Newtonsoft.Json;
 
 namespace AccordionGridProject
 {
@@ -284,6 +285,41 @@ namespace AccordionGridProject
             public string FileName { get; set; }
             public string FileExtension { get; set; }
             public string Notes { get; set; }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // UPLOAD DOCUMENT WebMethod
+        //
+        // Called by the AccordionGrid PDF upload widget via:
+        //   fetch('Default.aspx/UploadDocument', { method:'POST', body: FormData })
+        //
+        // [WebMethod] doesn't receive multipart natively — we read the file
+        // directly from HttpContext.Current.Request.Files.
+        //
+        // In your real C3 integration, replace the stub body with:
+        //   var guid = BlobStorageService.Upload(file.InputStream, file.FileName);
+        //   return guid;
+        // ─────────────────────────────────────────────────────────────────────
+        [WebMethod]
+        public static string UploadDocument()
+        {
+            var ctx = System.Web.HttpContext.Current;
+            var file = ctx.Request.Files["file"];
+
+            if (file == null || file.ContentLength == 0)
+                throw new InvalidOperationException("No file received.");
+
+            // Server-side PDF validation (belt-and-suspenders — JS validates first)
+            var ext = System.IO.Path.GetExtension(file.FileName ?? "").ToLowerInvariant();
+            if (ext != ".pdf")
+                throw new InvalidOperationException("Only PDF files are accepted.");
+
+            // ── Stub: replace with your real blob storage call ────────────
+            var fakeGuid = Guid.NewGuid().ToString();
+            System.Diagnostics.Trace.TraceInformation(
+                "[UploadDocument] Simulated — file={0}, guid={1}", file.FileName, fakeGuid);
+            return fakeGuid;
+            // ─────────────────────────────────────────────────────────────
         }
     }
 }

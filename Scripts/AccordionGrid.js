@@ -621,6 +621,19 @@
     gap: 8px;
 }
 
+/* ── PDF upload widget ── */
+.ag-pdf-upload-container {
+    padding: 12px 14px;
+    background: #f8fbf8;
+    border: 1px dashed var(--ag-border);
+    border-radius: var(--ag-radius);
+    margin-top: 4px;
+}
+.ag-pdf-choose-btn:hover {
+    background: var(--ag-btn-hover) !important;
+    border-color: #8a938a !important;
+}
+
 /* ── Responsive ── */
 @media (max-width: 768px) {
     .ag-field-grid { grid-template-columns: 1fr; }
@@ -711,6 +724,12 @@
         onSearch: null,
         onSort: null,
         onFilterChange: null,
+        // PDF / blob upload (called before insert when a file is attached)
+        // signature: function(file, progressCallback, done)
+        //   progressCallback(pct)  — 0-100, optional
+        //   done(err, guidReference) — null err on success
+        onUploadDocument: null,
+        uploadDocumentField: 'DocumentReference', // key to store the returned GUID in
         // For server-side: supply this to override client fetch
         dataLoader: null,    // function(params, callback) — async data source
     };
@@ -771,6 +790,8 @@
         this._expanded = {};   // rowId -> bool
         this._addPanelOpen = false;
         this._editBuffer = {};  // rowId -> draft record
+        this._editMode = {};  // rowId -> bool (false=view-only, true=editing)
+        this._uploadState = {};  // 'new' or rowId -> {file, guid, uploading, progress, error}
         this._newBuffer = {};
         this._uid = 'ag_' + Math.random().toString(36).slice(2, 9);
         this._container = null;
@@ -873,7 +894,8 @@
             return this._findById(id);
         },
 
-        expandRow: function (id) { this._setExpanded(id, true); },
+        expandRow: function (id) { this._setExpanded(id, true, false); },
+        expandRowForEdit: function (id) { this._setExpanded(id, true, true); },
         collapseRow: function (id) { this._setExpanded(id, false); },
         collapseAll: function () {
             this._expanded = {};
@@ -973,18 +995,37 @@
             return Math.max(1, Math.ceil(this._filtered.length / this._pageSize));
         },
 
-        _setExpanded: function (id, open) {
+        _setExpanded: function (id, open, editMode) {
             var cfg = this._config;
             if (open && cfg.singleExpand) {
                 this._expanded = {};
+                this._editMode = {};
             }
             this._expanded[id] = open;
+            // Arrow click always opens read-only; Edit button passes editMode=true
+            this._editMode[id] = open ? (editMode === true) : false;
             if (open && !this._editBuffer[id]) {
                 var rec = this._findById(id);
                 if (rec) this._editBuffer[id] = deepClone(rec);
             }
+            if (!open) delete this._uploadState[id];
             this._renderBody();
             this._fire(open ? 'onRowExpand' : 'onRowCollapse', { id: id, record: this._findById(id) });
+        },
+
+        // Switch an already-expanded row from view-only into edit mode in-place
+        _setEditMode: function (id) {
+            this._editMode[id] = true;
+            var wrap = document.querySelector('[data-agid="' + id + '"].ag-row-wrap');
+            var dp = wrap && wrap.querySelector('.ag-detail-panel');
+            if (!dp) return;
+            var rec = this._findById(id);
+            if (!this._editBuffer[id]) this._editBuffer[id] = deepClone(rec);
+            dp.innerHTML = this._buildDetailPanel(rec);
+            this._bindFormEvents(dp, id);
+            // Smooth focus on first editable field
+            var first = dp.querySelector('input:not([readonly]):not([style*="pointer-events:none"]), select:not([style*="pointer-events:none"]), textarea:not([readonly])');
+            if (first) first.focus();
         },
 
         _fire: function (event, data) {
@@ -1287,15 +1328,23 @@
         _buildDetailPanel: function (record) {
             var cfg = this._config;
             var buf = this._editBuffer[record._agId] || deepClone(record);
-            var isNew = false;
+            var viewOnly = !this._editMode[record._agId]; // true = read-only view
 
             if (cfg.expandMode === 'quickview') {
                 return this._buildQuickView(record);
             }
 
-            // Sectioned edit form
+            var self = this;
             var html = '';
             var usedFields = {};
+
+            // ── Helper: render one field either as a read-only display or input ──
+            function renderField(field, forceReadOnly) {
+                if (viewOnly || forceReadOnly) {
+                    return buildViewFieldHtml(field, buf);
+                }
+                return buildFieldHtml(field, buf, record._agId);
+            }
 
             if (cfg.editSections && cfg.editSections.length) {
                 cfg.editSections.forEach(function (section) {
@@ -1306,35 +1355,43 @@
                         var field = cfg.editFields.find(function (f) { return f.key === fkey; });
                         if (field) {
                             usedFields[fkey] = true;
-                            html += buildFieldHtml(field, buf, record._agId);
+                            html += renderField(field);
                         }
                     });
                     html += '</div></div></div>';
                 });
-                // Remaining fields not in any section
                 var rem = cfg.editFields.filter(function (f) { return !usedFields[f.key]; });
                 if (rem.length) {
                     html += '<div class="ag-section"><div class="ag-section-body"><div class="ag-field-grid">';
-                    rem.forEach(function (field) { html += buildFieldHtml(field, buf, record._agId); });
+                    rem.forEach(function (field) { html += renderField(field); });
                     html += '</div></div></div>';
                 }
             } else if (cfg.editFields.length) {
                 html += '<div class="ag-section-body"><div class="ag-field-grid">';
-                cfg.editFields.forEach(function (field) { html += buildFieldHtml(field, buf, record._agId); });
+                cfg.editFields.forEach(function (field) { html += renderField(field); });
                 html += '</div></div>';
             }
 
-            // Form action bar
+            // ── Action bar ──────────────────────────────────────────────────────
             html += '<div class="ag-form-actions">';
-            if (cfg.showUpdate) {
-                html += '<button class="ag-form-save-btn" type="button" data-formaction="save" data-agid="' + record._agId + '">' +
-                    (isNew ? 'Insert' : 'Save') + '</button>';
-            }
-            if (cfg.showCancel) {
-                html += '<button class="ag-form-cancel-btn" type="button" data-formaction="cancel" data-agid="' + record._agId + '">Cancel</button>';
-            }
-            if (cfg.showDelete) {
-                html += '<button class="ag-form-delete-btn" type="button" data-formaction="delete" data-agid="' + record._agId + '">Delete</button>';
+            if (viewOnly) {
+                // View-only: just a Close button (Edit is in the Actions column)
+                html += '<button class="ag-form-cancel-btn" type="button" ' +
+                    'data-formaction="cancel" data-agid="' + record._agId + '">Close</button>';
+            } else {
+                // Edit mode: Save / Cancel / Delete
+                if (cfg.showUpdate) {
+                    html += '<button class="ag-form-save-btn" type="button" ' +
+                        'data-formaction="save" data-agid="' + record._agId + '">Save</button>';
+                }
+                if (cfg.showCancel) {
+                    html += '<button class="ag-form-cancel-btn" type="button" ' +
+                        'data-formaction="cancel" data-agid="' + record._agId + '">Cancel</button>';
+                }
+                if (cfg.showDelete) {
+                    html += '<button class="ag-form-delete-btn" type="button" ' +
+                        'data-formaction="delete" data-agid="' + record._agId + '">Delete</button>';
+                }
             }
             html += '</div>';
             return html;
@@ -1363,7 +1420,9 @@
         _buildAddPanel: function () {
             var cfg = this._config;
             var buf = this._newBuffer;
-            var html = '<div class="ag-add-panel-title">' + this._svgPlus() + 'Add New ' + escapeHtml(cfg.title.replace(/s$/, '')) + '</div>';
+            var upst = this._uploadState['new'] || {};
+            var html = '<div class="ag-add-panel-title">' + this._svgPlus() +
+                'Add New ' + escapeHtml(cfg.title.replace(/s$/, '')) + '</div>';
 
             if (cfg.editSections && cfg.editSections.length) {
                 cfg.editSections.forEach(function (section) {
@@ -1374,17 +1433,26 @@
                         var field = cfg.editFields.find(function (f) { return f.key === fkey; });
                         if (field) html += buildFieldHtml(field, buf, 'new');
                     });
+
+                    // Inject PDF upload widget after the Document section fields
+                    if (section.title === 'Document' || section.isDocumentSection) {
+                        html += buildPdfUploadWidget('new', upst, cfg);
+                    }
                     html += '</div></div></div>';
                 });
             } else if (cfg.editFields.length) {
                 html += '<div class="ag-section-body"><div class="ag-field-grid">';
                 cfg.editFields.forEach(function (field) { html += buildFieldHtml(field, buf, 'new'); });
                 html += '</div></div>';
+                if (typeof cfg.onUploadDocument === 'function') {
+                    html += '<div class="ag-section-body">' + buildPdfUploadWidget('new', upst, cfg) + '</div>';
+                }
             }
 
             html += '<div class="ag-form-actions">';
             if (cfg.showInsert) {
-                html += '<button class="ag-form-save-btn" type="button" data-formaction="insert" data-agid="new">Insert</button>';
+                html += '<button class="ag-form-save-btn" type="button" data-formaction="insert" data-agid="new">' +
+                    (upst.uploading ? 'Uploading…' : 'Save New Template') + '</button>';
             }
             html += '<button class="ag-form-cancel-btn" type="button" data-formaction="cancel-add" data-agid="new">Cancel</button>';
             html += '</div>';
@@ -1453,8 +1521,52 @@
 
         _bindFormEvents: function (panel, id) {
             var self = this;
-            // Input change tracking
+
+            // ── PDF upload file picker ─────────────────────────────────────────
+            var filePicker = panel.querySelector('.ag-pdf-file-input');
+            if (filePicker) {
+                filePicker.addEventListener('change', function () {
+                    var file = filePicker.files[0];
+                    if (!file) return;
+                    var stKey = (id === 'new') ? 'new' : id;
+
+                    // Validate: PDF only
+                    var isPdf = file.type === 'application/pdf' ||
+                        file.name.toLowerCase().endsWith('.pdf');
+                    if (!isPdf) {
+                        self._uploadState[stKey] = { file: null, error: 'Only PDF files are allowed.' };
+                        self._refreshUploadWidget(panel, stKey);
+                        filePicker.value = '';
+                        return;
+                    }
+                    // Validate: size ≤ 20 MB
+                    if (file.size > 20 * 1024 * 1024) {
+                        self._uploadState[stKey] = { file: null, error: 'File must be 20 MB or smaller.' };
+                        self._refreshUploadWidget(panel, stKey);
+                        filePicker.value = '';
+                        return;
+                    }
+
+                    self._uploadState[stKey] = { file: file, guid: null, uploading: false, progress: 0, error: null };
+                    self._refreshUploadWidget(panel, stKey);
+                });
+            }
+
+            // ── Upload button ──────────────────────────────────────────────────
+            var uploadBtn = panel.querySelector('.ag-pdf-upload-btn');
+            if (uploadBtn) {
+                uploadBtn.addEventListener('click', function () {
+                    var stKey = (id === 'new') ? 'new' : id;
+                    var upst = self._uploadState[stKey];
+                    if (!upst || !upst.file) return;
+                    if (upst.uploading) return;
+                    self._doUpload(panel, stKey, upst.file, null);
+                });
+            }
+
+            // ── Standard input tracking ────────────────────────────────────────
             panel.querySelectorAll('input, textarea, select').forEach(function (inp) {
+                if (inp.classList.contains('ag-pdf-file-input')) return; // handled above
                 if (inp.type === 'file') {
                     inp.addEventListener('change', function () {
                         var lbl = panel.querySelector('.ag-file-name[data-for="' + inp.getAttribute('data-fieldkey') + '"]');
@@ -1467,7 +1579,6 @@
                     var val = inp.type === 'checkbox' ? inp.checked : inp.value;
                     var buf = id === 'new' ? self._newBuffer : (self._editBuffer[id] = self._editBuffer[id] || {});
                     if (key) buf[key] = val;
-                    // Fire field onChange
                     var field = self._config.editFields.find(function (f) { return f.key === key; });
                     if (field && typeof field.onChange === 'function') {
                         field.onChange(key, val, self._findById(id));
@@ -1475,64 +1586,73 @@
                 });
             });
 
-            // Form action buttons
+            // ── Form action buttons ────────────────────────────────────────────
             panel.querySelectorAll('[data-formaction]').forEach(function (btn) {
                 btn.addEventListener('click', function () {
                     var action = btn.getAttribute('data-formaction');
                     var agid = btn.getAttribute('data-agid');
                     var numId = parseInt(agid, 10);
 
+                    // ── Cancel / Close ─────────────────────────────────────────
                     if (action === 'cancel' || action === 'cancel-add') {
                         if (action === 'cancel-add') {
                             self._addPanelOpen = false;
+                            delete self._uploadState['new'];
                             var ap = document.getElementById(self._uid + '_addpanel');
                             if (ap) { ap.classList.remove('ag-visible'); ap.innerHTML = ''; }
                         } else {
+                            // If we were in edit mode, revert buffer; either way collapse
+                            delete self._editBuffer[numId];
+                            delete self._editMode[numId];
                             self._setExpanded(numId, false);
                         }
                         return;
                     }
 
+                    // ── Edit-switch (view → edit) ──────────────────────────────
                     if (action === 'edit-switch') {
-                        // Switch quickview to edit mode
-                        var wrap2 = document.querySelector('[data-agid="' + numId + '"].ag-row-wrap');
-                        var dp = wrap2 && wrap2.querySelector('.ag-detail-panel');
-                        if (dp) {
-                            var rec = self._findById(numId);
-                            self._editBuffer[numId] = deepClone(rec);
-                            var prevMode = self._config.expandMode;
-                            self._config.expandMode = 'edit';
-                            dp.innerHTML = self._buildDetailPanel(rec);
-                            self._config.expandMode = prevMode;
-                            self._bindFormEvents(dp, numId);
-                        }
+                        self._setEditMode(numId);
                         return;
                     }
 
+                    // ── Save (update existing) ─────────────────────────────────
                     if (action === 'save') {
                         var buf = self._editBuffer[numId];
                         if (!buf) return;
                         self._collectFormValues(panel, buf);
                         var rec2 = self._findById(numId);
                         if (rec2) Object.assign(rec2, buf);
+                        delete self._editMode[numId];
+                        delete self._uploadState[numId];
                         self._apply();
                         self._setExpanded(numId, false);
                         self._fire('onSave', { id: numId, record: rec2, isNew: false });
                         return;
                     }
 
+                    // ── Insert (add new) — async: upload PDF first if needed ───
                     if (action === 'insert') {
                         self._collectFormValues(panel, self._newBuffer);
-                        var newRec = Object.assign({}, self._newBuffer);
-                        self.addRecord(newRec);
-                        self._addPanelOpen = false;
-                        var ap2 = document.getElementById(self._uid + '_addpanel');
-                        if (ap2) { ap2.classList.remove('ag-visible'); ap2.innerHTML = ''; }
-                        self._newBuffer = {};
-                        self._fire('onSave', { record: newRec, isNew: true });
+                        var cfg = self._config;
+                        var upst = self._uploadState['new'];
+                        var hasFn = typeof cfg.onUploadDocument === 'function';
+
+                        // If a file is selected but not yet uploaded → upload first
+                        if (hasFn && upst && upst.file && !upst.guid) {
+                            self._doUpload(panel, 'new', upst.file, function (guid) {
+                                // Store GUID in the buffer then proceed
+                                self._newBuffer[cfg.uploadDocumentField] = guid;
+                                self._finaliseInsert(panel);
+                            });
+                            return;
+                        }
+
+                        // If upload already done, guid is in buffer — just insert
+                        self._finaliseInsert(panel);
                         return;
                     }
 
+                    // ── Delete ─────────────────────────────────────────────────
                     if (action === 'delete') {
                         if (confirm('Are you sure you want to delete this record?')) {
                             var rec3 = self._findById(numId);
@@ -1543,6 +1663,82 @@
                     }
                 });
             });
+        },
+
+        // Finish an insert after any upload is complete
+        _finaliseInsert: function (panel) {
+            var self = this;
+            var newRec = Object.assign({}, this._newBuffer);
+            this.addRecord(newRec);
+            this._addPanelOpen = false;
+            delete this._uploadState['new'];
+            var ap = document.getElementById(this._uid + '_addpanel');
+            if (ap) { ap.classList.remove('ag-visible'); ap.innerHTML = ''; }
+            this._newBuffer = {};
+            this._fire('onSave', { record: newRec, isNew: true });
+        },
+
+        // Perform the blob upload and update the widget UI as it progresses
+        _doUpload: function (panel, stKey, file, onDone) {
+            var self = this;
+            var cfg = this._config;
+            var upst = this._uploadState[stKey] || {};
+            upst.uploading = true;
+            upst.progress = 0;
+            upst.error = null;
+            this._uploadState[stKey] = upst;
+            this._refreshUploadWidget(panel, stKey);
+
+            // Disable the Save button during upload
+            var saveBtn = panel.querySelector('[data-formaction="insert"]');
+            if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Uploading…'; }
+
+            cfg.onUploadDocument(
+                file,
+                // progress callback
+                function (pct) {
+                    upst.progress = pct;
+                    self._refreshUploadWidget(panel, stKey);
+                },
+                // done callback
+                function (err, guid) {
+                    upst.uploading = false;
+                    if (err) {
+                        upst.error = err;
+                        upst.guid = null;
+                    } else {
+                        upst.guid = guid;
+                        upst.error = null;
+                        // Store GUID into the buffer immediately
+                        self._newBuffer[cfg.uploadDocumentField] = guid;
+                    }
+                    self._refreshUploadWidget(panel, stKey);
+                    if (saveBtn) {
+                        saveBtn.disabled = false;
+                        saveBtn.textContent = 'Save New Template';
+                    }
+                    if (!err && typeof onDone === 'function') onDone(guid);
+                }
+            );
+        },
+
+        // Re-paint only the upload widget area without rebuilding the whole panel
+        _refreshUploadWidget: function (panel, stKey) {
+            var upst = this._uploadState[stKey] || {};
+            var widget = panel.querySelector('.ag-pdf-upload-widget');
+            if (!widget) return;
+            widget.innerHTML = buildPdfUploadWidgetInner(upst, this._config);
+            // Re-bind the new Upload button if present
+            var self = this;
+            var newBtn = widget.querySelector('.ag-pdf-upload-btn');
+            if (newBtn) {
+                newBtn.addEventListener('click', function () {
+                    var us = self._uploadState[stKey];
+                    if (us && us.file && !us.uploading) {
+                        self._doUpload(panel, stKey, us.file, null);
+                    }
+                });
+            }
         },
 
         _collectFormValues: function (panel, target) {
@@ -1691,8 +1887,122 @@
     }
 
     /* =========================================================
-       SECTION 6 — PAGE RANGE HELPER
+       SECTION 5b — VIEW-ONLY FIELD RENDERER
+       Renders a field as a labelled read-only display span,
+       used when a row is expanded via the arrow (not Edit button).
     ========================================================= */
+    function buildViewFieldHtml(field, buf) {
+        var val = buf && buf[field.key] != null ? buf[field.key] : '';
+        var cls = 'ag-field' + (field.fullWidth ? ' ag-field-full' : '');
+
+        // Checkboxes shown as Yes/No
+        if (field.type === 'checkbox') {
+            return '<div class="' + cls + ' ag-field-check" style="padding-top:20px;">' +
+                '<span style="width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;' +
+                'border:1px solid #b0b8b0;border-radius:2px;background:#f8f9f8;flex-shrink:0;">' +
+                (val ? '&#10003;' : '') + '</span>' +
+                '<span class="ag-field-label" style="text-transform:none;font-size:13px;font-weight:500;letter-spacing:0;color:#1a1e1a;">' +
+                escapeHtml(field.label) + '</span></div>';
+        }
+
+        // For selects, show the label not the raw value where possible
+        var display = '';
+        if (field.type === 'select' && Array.isArray(field.options)) {
+            var match = field.options.find(function (o) {
+                return String(o.value != null ? o.value : o) === String(val);
+            });
+            display = match ? escapeHtml(match.label != null ? match.label : match) : escapeHtml(val);
+        } else {
+            display = escapeHtml(val);
+        }
+
+        var empty = display === '';
+        return '<div class="' + cls + '">' +
+            '<label class="ag-field-label">' + escapeHtml(field.label) + '</label>' +
+            '<div style="padding:7px 0 4px;font-size:13px;color:' + (empty ? '#9aa09a' : '#1a1e1a') + ';min-height:28px;">' +
+            (empty ? '—' : display) + '</div>' +
+            '</div>';
+    }
+
+    /* =========================================================
+       SECTION 5c — PDF UPLOAD WIDGET BUILDER
+       Renders the full upload widget container (outer wrapper +
+       inner state). The inner part is refreshed in-place by
+       _refreshUploadWidget without rebuilding the whole panel.
+    ========================================================= */
+    function buildPdfUploadWidget(rowId, upst, cfg) {
+        // Only render if onUploadDocument is wired up
+        if (typeof cfg.onUploadDocument !== 'function') return '';
+        return '<div class="ag-field ag-field-full" style="grid-column:1/-1;">' +
+            '<label class="ag-field-label">PDF Document</label>' +
+            '<div class="ag-pdf-upload-container">' +
+            // The hidden file input — triggered by the styled label button
+            '<input type="file" accept=".pdf,application/pdf" ' +
+            'class="ag-pdf-file-input" id="ag-pdf-input-' + rowId + '" ' +
+            'style="display:none;" />' +
+            // Styled "Choose file" button that opens the file picker
+            '<label for="ag-pdf-input-' + rowId + '" class="ag-pdf-choose-btn" ' +
+            'style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;' +
+            'background:#f8f9f8;border:1px solid #b0b8b0;border-radius:4px;font-size:12px;' +
+            'font-family:inherit;cursor:pointer;white-space:nowrap;color:#1a1e1a;">' +
+            '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+            '<path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>' +
+            '<polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>' +
+            'Choose PDF</label>' +
+            // Dynamic inner area (file name, progress bar, status, upload button)
+            '<div class="ag-pdf-upload-widget" style="margin-top:8px;">' +
+            buildPdfUploadWidgetInner(upst, cfg) +
+            '</div>' +
+            '</div>' +
+            '</div>';
+    }
+
+    function buildPdfUploadWidgetInner(upst, cfg) {
+        // No file selected yet
+        if (!upst || !upst.file) {
+            var msg = (upst && upst.error)
+                ? '<span style="color:#c0392b;font-size:12px;">&#9888; ' + escapeHtml(upst.error) + '</span>'
+                : '<span style="color:#9aa09a;font-size:12px;">No file chosen — PDF only, max 20 MB.</span>';
+            return msg;
+        }
+        var html = '';
+        // File name pill
+        html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
+        html += '<span style="background:#e6f4e6;color:#256025;padding:3px 10px;border-radius:10px;' +
+            'font-size:12px;font-weight:500;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" ' +
+            'title="' + escapeHtml(upst.file.name) + '">&#128196; ' + escapeHtml(upst.file.name) + '</span>';
+
+        if (upst.uploading) {
+            // Progress bar
+            html += '</div>';
+            html += '<div style="margin-top:8px;">';
+            html += '<div style="background:#e0e4e0;border-radius:4px;height:6px;overflow:hidden;">' +
+                '<div style="background:#2e7d2e;height:6px;border-radius:4px;transition:width .3s;width:' +
+                Math.round(upst.progress || 0) + '%"></div></div>';
+            html += '<span style="font-size:11px;color:#7a837a;margin-top:3px;display:block;">' +
+                'Uploading… ' + Math.round(upst.progress || 0) + '%</span>';
+            html += '</div>';
+        } else if (upst.guid) {
+            // Success — show GUID reference
+            html += '<span style="background:#e6f4e6;border:1px solid #b0d8b0;border-radius:4px;' +
+                'padding:3px 8px;font-size:11px;color:#256025;font-family:Consolas,monospace;">' +
+                '&#10003; ' + escapeHtml(upst.guid) + '</span>';
+            html += '</div>';
+        } else {
+            // Ready to upload — show Upload button
+            html += '<button type="button" class="ag-pdf-upload-btn" ' +
+                'style="padding:5px 12px;background:#2e7d2e;color:#fff;border:1px solid #236122;' +
+                'border-radius:4px;font-size:12px;font-family:inherit;cursor:pointer;white-space:nowrap;">' +
+                'Upload to Storage</button>';
+            html += '</div>';
+        }
+
+        if (upst.error) {
+            html += '<div style="color:#c0392b;font-size:12px;margin-top:6px;">&#9888; ' +
+                escapeHtml(upst.error) + '</div>';
+        }
+        return html;
+    }
     function buildPageRange(current, total) {
         if (total <= 7) {
             var r = [];

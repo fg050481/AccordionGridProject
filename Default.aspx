@@ -184,7 +184,8 @@
             { title: 'Template Info', fields: ['Description', 'State', 'Active', 'MailCenterId'] },
             { title: 'Classification', fields: ['ServiceType', 'FormType', 'FormUse', 'PoaType'] },
             { title: 'Processing Rules', fields: ['SignatureType', 'ReturnType', 'OnlineRequirement'] },
-            { title: 'Document', fields: ['FileName', 'DocumentReference'] },
+            // isDocumentSection:true tells the grid to inject the PDF upload widget here
+            { title: 'Document', fields: ['FileName', 'DocumentReference'], isDocumentSection: true },
             { title: 'Notes', fields: ['Notes'] }
         ];
 
@@ -232,6 +233,50 @@
             showDelete: true,
             showCancel: true,
 
+            /* ── PDF / blob upload ──────────────────────────────────
+               Called by the grid when user clicks "Upload to Storage".
+               Receives: file (File object), onProgress(pct), done(err, guid)
+               In production: POST to UploadDocument WebMethod.
+            ────────────────────────────────────────────────────────*/
+            uploadDocumentField: 'DocumentReference',   // GUID stored here
+            onUploadDocument: function (file, onProgress, done) {
+                log('info', 'Upload started: ' + file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)');
+
+                /* ── Simulate blob storage upload (remove in production) ──────
+                   Replace this block with a real fetch() call to your WebMethod:
+    
+                   var form = new FormData();
+                   form.append('file', file);
+                   fetch('Default.aspx/UploadDocument', {
+                       method: 'POST',
+                       headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                       body: form,
+                       credentials: 'same-origin'
+                   })
+                   .then(function(r) { return r.json(); })
+                   .then(function(resp) {
+                       var guid = resp.d;            // WebMethod returns the GUID string
+                       done(null, guid);
+                   })
+                   .catch(function(err) { done('Upload failed: ' + err.message); });
+                ─────────────────────────────────────────────────────────────── */
+                var pct = 0;
+                var timer = setInterval(function () {
+                    pct += 20;
+                    onProgress(pct);
+                    if (pct >= 100) {
+                        clearInterval(timer);
+                        // Simulated GUID returned from blob storage service
+                        var fakeGuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+                            var r = Math.random() * 16 | 0;
+                            return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+                        });
+                        log('ok', 'Upload complete. GUID: ' + fakeGuid);
+                        done(null, fakeGuid);
+                    }
+                }, 300);
+            },
+
             /* ── Callbacks ─────────────────────────────────────────── */
             onLoad: function (e) {
                 log('ok', 'Grid loaded — ' + e.data.length + ' records.');
@@ -257,7 +302,9 @@
                 switch (e.action) {
 
                     case 'edit':
-                        grid.expandRow(e.id);
+                        // Opens the row in EDIT mode (all fields are inputs).
+                        // Clicking the ▶ arrow opens in READ-ONLY view instead.
+                        grid.expandRowForEdit(e.id);
                         break;
 
                     case 'extract':
