@@ -73,13 +73,28 @@ namespace AccordionGridProject
                 NullValueHandling = NullValueHandling.Include
             });
 
-            // ── Push to the browser as window.poaTemplatesData ───────────────
-            //    RegisterStartupScript injects a <script> block just before
-            //    </form>, which runs after AccordionGrid.js has been parsed.
+            // ── Push to the browser ───────────────────────────────────────────
+            //
+            // WHY NOT RegisterStartupScript alone?
+            //   RegisterStartupScript injects a <script> block just before </form>.
+            //   If a ScriptManager is on the page, or the page uses async postbacks,
+            //   the injection point can shift and the variable may not yet exist when
+            //   the init <script> at the bottom of the page runs.
+            //
+            // RELIABLE PATTERN: store the JSON in a hidden field + fall back to
+            //   RegisterStartupScript.  The init script reads the hidden field first,
+            //   then falls back to window.poaTemplatesData.
+            //   This works with Master Pages, ScriptManager, and plain WebForms.
+            //
+            // Hidden field (always present in rendered HTML, no timing issue):
+            HiddenGridData.Value = json;
+
+            // Also set window variable via RegisterStartupScript as secondary path:
+            var script = "window.poaTemplatesData = " + json + ";";
             ClientScript.RegisterStartupScript(
                 type: GetType(),
                 key: "poaTemplatesData",
-                script: "window.poaTemplatesData = " + json + ";",
+                script: script,
                 addScriptTags: true
             );
         }

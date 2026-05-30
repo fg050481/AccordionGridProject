@@ -2,7 +2,7 @@
  * AccordionGrid.js
  * Enterprise-grade Accordion + Data Grid component for ASP.NET WebForms (.NET 4.8)
  * Zero external dependencies · Self-contained CSS · ARIA accessible
- * Version 1.0.0
+ * Version 1.0.1
  */
 (function (root, factory) {
     'use strict';
@@ -700,19 +700,19 @@
         showDelete: false,
         showCancel: true,
         // Callbacks
-        onLoad:         null,
-        onRowExpand:    null,
-        onRowCollapse:  null,
-        onSave:         null,
-        onDelete:       null,
-        onActionClick:  null,
-        onAddNew:       null,
-        onPageChange:   null,
-        onSearch:       null,
-        onSort:         null,
+        onLoad: null,
+        onRowExpand: null,
+        onRowCollapse: null,
+        onSave: null,
+        onDelete: null,
+        onActionClick: null,
+        onAddNew: null,
+        onPageChange: null,
+        onSearch: null,
+        onSort: null,
         onFilterChange: null,
         // For server-side: supply this to override client fetch
-        dataLoader:     null,    // function(params, callback) — async data source
+        dataLoader: null,    // function(params, callback) — async data source
     };
 
     /*
@@ -760,21 +760,21 @@
     function AccordionGrid(containerId, options) {
         this._containerId = containerId;
         this._config = this._mergeConfig(options || {});
-        this._allData   = [];
-        this._filtered  = [];
-        this._page      = 1;
-        this._pageSize  = this._config.pageSize;
-        this._sortKey   = null;
-        this._sortDir   = 'asc';
+        this._allData = [];
+        this._filtered = [];
+        this._page = 1;
+        this._pageSize = this._config.pageSize;
+        this._sortKey = null;
+        this._sortDir = 'asc';
         this._searchVal = '';
         this._filterVal = '';
-        this._expanded  = {};   // rowId -> bool
+        this._expanded = {};   // rowId -> bool
         this._addPanelOpen = false;
-        this._editBuffer   = {};  // rowId -> draft record
-        this._newBuffer    = {};
-        this._uid          = 'ag_' + Math.random().toString(36).slice(2, 9);
-        this._container    = null;
-        this._idCounter    = 0;
+        this._editBuffer = {};  // rowId -> draft record
+        this._newBuffer = {};
+        this._uid = 'ag_' + Math.random().toString(36).slice(2, 9);
+        this._container = null;
+        this._idCounter = 0;
         injectCSS();
         this._render();
     }
@@ -798,9 +798,9 @@
                 }
             }
             // Restore functions that were wiped by deepClone
-            var fns = ['onLoad','onRowExpand','onRowCollapse','onSave','onDelete',
-                       'onActionClick','onAddNew','onPageChange','onSearch',
-                       'onSort','onFilterChange','dataLoader'];
+            var fns = ['onLoad', 'onRowExpand', 'onRowCollapse', 'onSave', 'onDelete',
+                'onActionClick', 'onAddNew', 'onPageChange', 'onSearch',
+                'onSort', 'onFilterChange', 'dataLoader'];
             fns.forEach(function (fn) {
                 if (typeof opts[fn] === 'function') cfg[fn] = opts[fn];
             });
@@ -812,7 +812,7 @@
             }
             if (Array.isArray(opts.editFields)) {
                 opts.editFields.forEach(function (f, i) {
-                    if (typeof f.render   === 'function') cfg.editFields[i].render   = f.render;
+                    if (typeof f.render === 'function') cfg.editFields[i].render = f.render;
                     if (typeof f.onChange === 'function') cfg.editFields[i].onChange = f.onChange;
                 });
             }
@@ -832,8 +832,8 @@
             data.forEach(function (r) {
                 if (r._agId == null) r._agId = ++self._idCounter;
             });
-            this._allData  = data;
-            this._page     = 1;
+            this._allData = data;
+            this._page = 1;
             this._expanded = {};
             this._apply();
             this._fire('onLoad', { data: data });
@@ -912,12 +912,12 @@
 
         _buildParams: function () {
             return {
-                page:      this._page,
-                pageSize:  this._pageSize,
-                search:    this._searchVal,
-                filter:    this._filterVal,
-                sortKey:   this._sortKey,
-                sortDir:   this._sortDir,
+                page: this._page,
+                pageSize: this._pageSize,
+                search: this._searchVal,
+                filter: this._filterVal,
+                sortKey: this._sortKey,
+                sortDir: this._sortDir,
             };
         },
 
@@ -1025,6 +1025,20 @@
             titleBar.className = 'ag-title-bar';
             container.appendChild(titleBar);
 
+            // Add button — created ONCE here so the listener is never lost
+            // when _renderTitle() refreshes the count label.
+            if (this._config.showAddButton) {
+                var self0 = this;
+                var addBtn = document.createElement('button');
+                addBtn.id = this._uid + '_addnew';
+                addBtn.className = 'ag-add-btn';
+                addBtn.setAttribute('aria-label', 'Add new record');
+                addBtn.setAttribute('type', 'button');
+                addBtn.innerHTML = this._svgPlus() + escapeHtml(this._config.addButtonLabel);
+                addBtn.addEventListener('click', function () { self0._toggleAddPanel(); });
+                titleBar.appendChild(addBtn);
+            }
+
             // Toolbar
             var toolbar = document.createElement('div');
             toolbar.className = 'ag-toolbar';
@@ -1063,17 +1077,19 @@
             if (!el) return;
             var count = this._filtered.length || this._allData.length;
             var label = this._config.title;
-            el.innerHTML =
-                '<h2>' + escapeHtml(label) + ' <span class="ag-count">(' + count + ' Records)</span></h2>' +
-                (this._config.showAddButton
-                    ? '<button class="ag-add-btn" id="' + this._uid + '_addnew" aria-label="Add new record">' +
-                      this._svgPlus() + escapeHtml(this._config.addButtonLabel) + '</button>'
-                    : '');
-            var self = this;
-            var btn = document.getElementById(this._uid + '_addnew');
-            if (btn) {
-                btn.addEventListener('click', function () { self._toggleAddPanel(); });
+
+            // Only touch the <h2> label — the Add button is a stable sibling
+            // created once in _render() so its listener is never lost.
+            var h2 = el.querySelector('h2.ag-title-h2');
+            if (!h2) {
+                h2 = document.createElement('h2');
+                h2.className = 'ag-title-h2';
+                // Insert before the button (which may already exist)
+                var existingBtn = el.querySelector('.ag-add-btn');
+                el.insertBefore(h2, existingBtn || null);
             }
+            h2.innerHTML = escapeHtml(label) +
+                ' <span class="ag-count">(' + count + ' Records)</span>';
         },
 
         _buildToolbar: function () {
@@ -1377,14 +1393,20 @@
 
         _toggleAddPanel: function () {
             var panel = document.getElementById(this._uid + '_addpanel');
-            if (!panel) return;
+            if (!panel) {
+                console.error('AccordionGrid: add panel element not found (id=' + this._uid + '_addpanel)');
+                return;
+            }
             this._addPanelOpen = !this._addPanelOpen;
             if (this._addPanelOpen) {
                 this._newBuffer = {};
-                panel.innerHTML = this._buildAddPanel();
+                var content = this._buildAddPanel();
+                panel.innerHTML = content;
                 panel.classList.add('ag-visible');
                 this._bindFormEvents(panel, 'new');
-                panel.querySelector('input, textarea, select') && panel.querySelector('input, textarea, select').focus();
+                // Focus the first editable input
+                var firstInput = panel.querySelector('input:not([disabled]):not([readonly]), select:not([disabled]), textarea:not([disabled])');
+                if (firstInput) firstInput.focus();
                 this._fire('onAddNew', {});
             } else {
                 panel.classList.remove('ag-visible');
@@ -1618,7 +1640,9 @@
         var cls = 'ag-field' + (field.fullWidth ? ' ag-field-full' : '');
         var labelCls = 'ag-field-label' + (field.required ? ' ag-field-required' : '');
         var dkey = 'data-fieldkey="' + escapeHtml(field.key) + '"';
-        var ro = field.readOnly ? ' readonly disabled' : '';
+        // Use only 'readonly' (not 'disabled') so _collectFormValues can still
+        // read the value. A disabled input is excluded from form queries entirely.
+        var ro = field.readOnly ? ' readonly style="background:#f4f5f4;color:#7a837a;cursor:default;"' : '';
         var ph = field.placeholder ? ' placeholder="' + escapeHtml(field.placeholder) + '"' : '';
         var id = 'agf_' + rowId + '_' + field.key;
         var html = '<div class="' + cls + '">';
@@ -1627,7 +1651,10 @@
         if (field.type === 'textarea') {
             html += '<textarea id="' + id + '" ' + dkey + ph + ro + '>' + escapeHtml(val) + '</textarea>';
         } else if (field.type === 'select') {
-            html += '<select id="' + id + '" ' + dkey + (field.readOnly ? ' disabled' : '') + '>';
+            var roSel = field.readOnly
+                ? ' style="background:#f4f5f4;color:#7a837a;pointer-events:none;"'
+                : '';
+            html += '<select id="' + id + '" ' + dkey + roSel + '>';
             (field.options || []).forEach(function (o) {
                 var sv = o.value != null ? o.value : o;
                 var sl = o.label != null ? o.label : o;
@@ -1635,8 +1662,9 @@
             });
             html += '</select>';
         } else if (field.type === 'checkbox') {
+            var roChk = field.readOnly ? ' style="pointer-events:none;opacity:.6;"' : '';
             html = '<div class="' + cls + ' ag-field-check">';
-            html += '<input type="checkbox" id="' + id + '" ' + dkey + (val ? ' checked' : '') + (field.readOnly ? ' disabled' : '') + ' />';
+            html += '<input type="checkbox" id="' + id + '" ' + dkey + (val ? ' checked' : '') + roChk + ' />';
             html += '<label class="ag-field-label" for="' + id + '">' + escapeHtml(field.label) + '</label>';
             html += '</div>';
             return html;
@@ -1688,3 +1716,4 @@
 
     return AccordionGrid;
 }));
+//# sourceMappingURL=none
