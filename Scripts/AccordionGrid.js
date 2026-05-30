@@ -553,6 +553,13 @@
     animation: ag-spin .7s linear infinite;
 }
 @keyframes ag-spin { to { transform: rotate(360deg); } }
+@keyframes ag-shake {
+    0%,100% { transform: translateX(0); }
+    20%      { transform: translateX(-5px); }
+    40%      { transform: translateX(5px); }
+    60%      { transform: translateX(-4px); }
+    80%      { transform: translateX(4px); }
+}
 
 /* ── Pagination ── */
 .ag-pagination {
@@ -730,6 +737,8 @@
         //   done(err, guidReference) — null err on success
         onUploadDocument: null,
         uploadDocumentField: 'DocumentReference', // key to store the returned GUID in
+        uploadMaxSizeMb: 20,                  // max file size in MB (default 20)
+        uploadAllowedExtensions: ['.pdf'],        // array of lowercase dot-extensions
         // For server-side: supply this to override client fetch
         dataLoader: null,    // function(params, callback) — async data source
     };
@@ -1451,8 +1460,21 @@
 
             html += '<div class="ag-form-actions">';
             if (cfg.showInsert) {
-                html += '<button class="ag-form-save-btn" type="button" data-formaction="insert" data-agid="new">' +
-                    (upst.uploading ? 'Uploading…' : 'Save New Template') + '</button>';
+                var hasFn = typeof cfg.onUploadDocument === 'function';
+                var hasGuid = hasFn && upst && upst.guid && upst.guid.length > 0;
+                var isBlocked = hasFn && !hasGuid;
+                var btnLabel = upst.uploading ? 'Uploading…' : 'Save New Template';
+                var blockedStyle = isBlocked
+                    ? 'opacity:.45;cursor:not-allowed;'
+                    : '';
+                var tooltip = isBlocked
+                    ? ' title="Upload a document first to enable saving"'
+                    : '';
+                html += '<button class="ag-form-save-btn" type="button" ' +
+                    'data-formaction="insert" data-agid="new"' +
+                    tooltip +
+                    ' style="' + blockedStyle + '">' +
+                    btnLabel + '</button>';
             }
             html += '<button class="ag-form-cancel-btn" type="button" data-formaction="cancel-add" data-agid="new">Cancel</button>';
             html += '</div>';
@@ -1529,25 +1551,75 @@
                     var file = filePicker.files[0];
                     if (!file) return;
                     var stKey = (id === 'new') ? 'new' : id;
+                    var cfg = self._config;
 
-                    // Validate: PDF only
-                    var isPdf = file.type === 'application/pdf' ||
-                        file.name.toLowerCase().endsWith('.pdf');
-                    if (!isPdf) {
-                        self._uploadState[stKey] = { file: null, error: 'Only PDF files are allowed.' };
+                    // ── Resolve allowed extensions from config ─────────────────
+                    // Always lowercase, always starts with a dot.
+                    var allowed = Array.isArray(cfg.uploadAllowedExtensions) && cfg.uploadAllowedExtensions.length
+                        ? cfg.uploadAllowedExtensions.map(function (e) {
+                            return (e.charAt(0) === '.' ? e : '.' + e).toLowerCase();
+                        })
+                        : ['.pdf'];
+
+                    // ── Validate extension (real-time, before any upload) ──────
+                    var fileExt = file.name.toLowerCase().lastIndexOf('.') !== -1
+                        ? file.name.toLowerCase().slice(file.name.toLowerCase().lastIndexOf('.'))
+                        : '';
+                    var extOk = allowed.indexOf(fileExt) !== -1;
+
+                    // Also check MIME type as a second signal (browsers set this).
+                    // We maintain a map of known extensions → MIME types.
+                    // If the MIME is present AND mismatched we reject; if absent
+                    // (some OSes omit it) we rely on the extension check alone.
+                    var mimeMap = {
+                        '.pdf': ['application/pdf'],
+                        '.doc': ['application/msword'],
+                        '.docx': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+                        '.xls': ['application/vnd.ms-excel'],
+                        '.xlsx': ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+                        '.png': ['image/png'],
+                        '.jpg': ['image/jpeg'],
+                        '.jpeg': ['image/jpeg'],
+                        '.gif': ['image/gif'],
+                        '.txt': ['text/plain'],
+                        '.csv': ['text/csv', 'text/plain'],
+                        '.zip': ['application/zip', 'application/x-zip-compressed'],
+                    };
+                    var expectedMimes = mimeMap[fileExt];
+                    var mimeOk = true;
+                    if (file.type && expectedMimes) {
+                        mimeOk = expectedMimes.indexOf(file.type) !== -1;
+                    }
+
+                    if (!extOk || !mimeOk) {
+                        var extList = allowed.join(', ');
+                        self._uploadState[stKey] = {
+                            file: null,
+                            error: 'Invalid file type. Allowed: ' + extList + '.'
+                        };
                         self._refreshUploadWidget(panel, stKey);
                         filePicker.value = '';
                         return;
                     }
-                    // Validate: size ≤ 20 MB
-                    if (file.size > 20 * 1024 * 1024) {
-                        self._uploadState[stKey] = { file: null, error: 'File must be 20 MB or smaller.' };
+
+                    // ── Validate size ──────────────────────────────────────────
+                    var maxMb = (typeof cfg.uploadMaxSizeMb === 'number' && cfg.uploadMaxSizeMb > 0)
+                        ? cfg.uploadMaxSizeMb : 20;
+                    var maxBytes = maxMb * 1024 * 1024;
+                    if (file.size > maxBytes) {
+                        self._uploadState[stKey] = {
+                            file: null,
+                            error: 'File is too large. Maximum allowed size is ' + maxMb + ' MB.'
+                        };
                         self._refreshUploadWidget(panel, stKey);
                         filePicker.value = '';
                         return;
                     }
 
-                    self._uploadState[stKey] = { file: file, guid: null, uploading: false, progress: 0, error: null };
+                    // ── All good ───────────────────────────────────────────────
+                    self._uploadState[stKey] = {
+                        file: file, guid: null, uploading: false, progress: 0, error: null
+                    };
                     self._refreshUploadWidget(panel, stKey);
                 });
             }
@@ -1637,17 +1709,38 @@
                         var upst = self._uploadState['new'];
                         var hasFn = typeof cfg.onUploadDocument === 'function';
 
-                        // If a file is selected but not yet uploaded → upload first
-                        if (hasFn && upst && upst.file && !upst.guid) {
-                            self._doUpload(panel, 'new', upst.file, function (guid) {
-                                // Store GUID in the buffer then proceed
-                                self._newBuffer[cfg.uploadDocumentField] = guid;
-                                self._finaliseInsert(panel);
-                            });
-                            return;
+                        // ── HARD GATE: upload is required and no guid yet ───────
+                        // Three blocked states:
+                        //   a) No file selected at all
+                        //   b) File selected but Upload button not yet clicked
+                        //   c) Upload was attempted but failed (no guid)
+                        if (hasFn) {
+                            var hasGuid = upst && upst.guid && upst.guid.length > 0;
+                            if (!hasGuid) {
+                                var reason = !upst || !upst.file
+                                    ? 'A document must be uploaded before saving. Please choose a file and click "Upload to Storage".'
+                                    : upst.uploading
+                                        ? 'Upload is still in progress. Please wait until it completes.'
+                                        : 'The document has not been uploaded yet. Please click "Upload to Storage" first.';
+
+                                // Surface the error inside the upload widget
+                                if (!self._uploadState['new']) self._uploadState['new'] = {};
+                                self._uploadState['new'].error = reason;
+                                self._refreshUploadWidget(panel, 'new');
+
+                                // Also shake the save button to draw attention
+                                var sb = panel.querySelector('[data-formaction="insert"]');
+                                if (sb) {
+                                    sb.style.animation = 'none';
+                                    // Force reflow then apply shake
+                                    void sb.offsetWidth;
+                                    sb.style.animation = 'ag-shake .4s ease';
+                                }
+                                return;
+                            }
                         }
 
-                        // If upload already done, guid is in buffer — just insert
+                        // Upload already done or not required — proceed
                         self._finaliseInsert(panel);
                         return;
                     }
@@ -1738,6 +1831,29 @@
                         self._doUpload(panel, stKey, us.file, null);
                     }
                 });
+            }
+
+            // ── Sync Save button locked/unlocked state ─────────────────────
+            // Called after every upload state transition so the button always
+            // reflects whether a valid guid is in hand.
+            var saveBtn = panel.querySelector('[data-formaction="insert"]');
+            if (!saveBtn) return;
+            var hasFn = typeof this._config.onUploadDocument === 'function';
+            var hasGuid = hasFn && upst.guid && upst.guid.length > 0;
+            if (hasFn) {
+                if (hasGuid) {
+                    // ✓ Upload complete — unlock
+                    saveBtn.style.opacity = '1';
+                    saveBtn.style.cursor = 'pointer';
+                    saveBtn.removeAttribute('title');
+                    saveBtn.textContent = 'Save New Template';
+                } else {
+                    // ✗ No guid yet — keep locked
+                    saveBtn.style.opacity = '0.45';
+                    saveBtn.style.cursor = 'not-allowed';
+                    saveBtn.title = 'Upload a document first to enable saving';
+                    if (!upst.uploading) saveBtn.textContent = 'Save New Template';
+                }
             }
         },
 
@@ -1933,14 +2049,28 @@
     function buildPdfUploadWidget(rowId, upst, cfg) {
         // Only render if onUploadDocument is wired up
         if (typeof cfg.onUploadDocument !== 'function') return '';
+
+        // Build the accept attribute from config
+        var allowed = Array.isArray(cfg.uploadAllowedExtensions) && cfg.uploadAllowedExtensions.length
+            ? cfg.uploadAllowedExtensions.map(function (e) {
+                return (e.charAt(0) === '.' ? e : '.' + e).toLowerCase();
+            })
+            : ['.pdf'];
+        var maxMb = (typeof cfg.uploadMaxSizeMb === 'number' && cfg.uploadMaxSizeMb > 0)
+            ? cfg.uploadMaxSizeMb : 20;
+
+        // accept= value: comma-separated extensions
+        var acceptAttr = allowed.join(',');
+        // Human-readable label: "Choose PDF" / "Choose PDF, DOCX" / "Choose File"
+        var extLabels = allowed.map(function (e) { return e.replace('.', '').toUpperCase(); });
+        var chooseLbl = 'Choose ' + (extLabels.length <= 3 ? extLabels.join(', ') : 'File');
+
         return '<div class="ag-field ag-field-full" style="grid-column:1/-1;">' +
-            '<label class="ag-field-label">PDF Document</label>' +
+            '<label class="ag-field-label">Document</label>' +
             '<div class="ag-pdf-upload-container">' +
-            // The hidden file input — triggered by the styled label button
-            '<input type="file" accept=".pdf,application/pdf" ' +
+            '<input type="file" accept="' + escapeHtml(acceptAttr) + '" ' +
             'class="ag-pdf-file-input" id="ag-pdf-input-' + rowId + '" ' +
             'style="display:none;" />' +
-            // Styled "Choose file" button that opens the file picker
             '<label for="ag-pdf-input-' + rowId + '" class="ag-pdf-choose-btn" ' +
             'style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;' +
             'background:#f8f9f8;border:1px solid #b0b8b0;border-radius:4px;font-size:12px;' +
@@ -1948,21 +2078,35 @@
             '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
             '<path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>' +
             '<polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>' +
-            'Choose PDF</label>' +
-            // Dynamic inner area (file name, progress bar, status, upload button)
+            escapeHtml(chooseLbl) + '</label>' +
             '<div class="ag-pdf-upload-widget" style="margin-top:8px;">' +
-            buildPdfUploadWidgetInner(upst, cfg) +
+            buildPdfUploadWidgetInner(upst, cfg, allowed, maxMb) +
             '</div>' +
             '</div>' +
             '</div>';
     }
 
-    function buildPdfUploadWidgetInner(upst, cfg) {
+    function buildPdfUploadWidgetInner(upst, cfg, allowed, maxMb) {
+        // Resolve defaults when called from _refreshUploadWidget (no allowed/maxMb passed)
+        if (!allowed) {
+            allowed = Array.isArray(cfg.uploadAllowedExtensions) && cfg.uploadAllowedExtensions.length
+                ? cfg.uploadAllowedExtensions.map(function (e) {
+                    return (e.charAt(0) === '.' ? e : '.' + e).toLowerCase();
+                })
+                : ['.pdf'];
+        }
+        if (!maxMb) {
+            maxMb = (typeof cfg.uploadMaxSizeMb === 'number' && cfg.uploadMaxSizeMb > 0)
+                ? cfg.uploadMaxSizeMb : 20;
+        }
+        var extLabels = allowed.map(function (e) { return e.replace('.', '').toUpperCase(); });
+        var hintText = extLabels.join(', ') + ' only — max ' + maxMb + ' MB.';
+
         // No file selected yet
         if (!upst || !upst.file) {
             var msg = (upst && upst.error)
                 ? '<span style="color:#c0392b;font-size:12px;">&#9888; ' + escapeHtml(upst.error) + '</span>'
-                : '<span style="color:#9aa09a;font-size:12px;">No file chosen — PDF only, max 20 MB.</span>';
+                : '<span style="color:#9aa09a;font-size:12px;">' + escapeHtml(hintText) + '</span>';
             return msg;
         }
         var html = '';

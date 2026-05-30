@@ -309,10 +309,15 @@ namespace AccordionGridProject
             if (file == null || file.ContentLength == 0)
                 throw new InvalidOperationException("No file received.");
 
-            // Server-side PDF validation (belt-and-suspenders — JS validates first)
             var ext = System.IO.Path.GetExtension(file.FileName ?? "").ToLowerInvariant();
-            if (ext != ".pdf")
-                throw new InvalidOperationException("Only PDF files are accepted.");
+
+            // Server-side extension check: only block obviously wrong types.
+            // The definitive validation lives in uploadAllowedExtensions on the client;
+            // here we just guard against direct API calls bypassing the browser.
+            // Expand this list to match whatever uploadAllowedExtensions you configure.
+            var allowedServerExts = new[] { ".pdf", ".docx", ".doc", ".tiff", ".tif", ".png", ".jpg", ".jpeg" };
+            if (!allowedServerExts.Contains(ext))
+                throw new InvalidOperationException("File type '" + ext + "' is not permitted.");
 
             // ── Stub: replace with your real blob storage call ────────────
             var fakeGuid = Guid.NewGuid().ToString();

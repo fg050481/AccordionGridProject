@@ -1,6 +1,7 @@
 ﻿<%@ Page Language="C#" AutoEventWireup="true" CodeBehind="Default.aspx.cs" Inherits="AccordionGridProject.Default" %>
 
 <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head runat="server">
     <meta charset="UTF-8" />
@@ -239,6 +240,8 @@
                In production: POST to UploadDocument WebMethod.
             ────────────────────────────────────────────────────────*/
             uploadDocumentField: 'DocumentReference',   // GUID stored here
+            uploadMaxSizeMb: 20,                   // 15 | 20 | 30 — default 20
+            uploadAllowedExtensions: ['.pdf'],          // e.g. ['.pdf','.docx','.tiff']
             onUploadDocument: function (file, onProgress, done) {
                 log('info', 'Upload started: ' + file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)');
 
