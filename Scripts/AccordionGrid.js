@@ -870,16 +870,8 @@
         },
 
         refresh: function () {
-            var self = this;
-            if (typeof this._config.dataLoader === 'function') {
-                this._showLoading(true);
-                this._config.dataLoader(this._buildParams(), function (data) {
-                    self._showLoading(false);
-                    self.loadData(data);
-                });
-            } else {
-                this._apply();
-            }
+            this._page = 1;
+            this._apply();
         },
 
         addRecord: function (record) {
@@ -913,15 +905,13 @@
 
         setPage: function (p) {
             this._page = p;
-            this._renderBody();
-            this._renderPager();
+            this._apply();   // triggers dataLoader in server-side mode
         },
 
         setPageSize: function (n) {
             this._pageSize = n;
             this._page = 1;
-            this._renderBody();
-            this._renderPager();
+            this._apply();   // triggers dataLoader in server-side mode
         },
 
         setFilter: function (val) {
@@ -954,6 +944,30 @@
 
         _apply: function () {
             var cfg = this._config;
+
+            // ── Server-side mode ───────────────────────────────────────────
+            // When dataLoader is configured, the server owns filter/search/sort/
+            // paging.  _apply just triggers a fresh dataLoader call and renders
+            // whatever the server returns.  Client-side filter/sort are skipped.
+            if (typeof cfg.dataLoader === 'function') {
+                var self = this;
+                this._showLoading(true);
+                cfg.dataLoader(this._buildParams(), function (data) {
+                    self._showLoading(false);
+                    // Assign internal IDs to incoming records
+                    data.forEach(function (r) {
+                        if (r._agId == null) r._agId = ++self._idCounter;
+                    });
+                    self._allData = data;
+                    self._filtered = data; // local slice — pager uses _serverTotalCount
+                    self._renderTitle();
+                    self._renderBody();
+                    self._renderPager();
+                });
+                return;
+            }
+
+            // ── Client-side mode ───────────────────────────────────────────
             var data = this._allData.slice();
 
             // Search
@@ -996,11 +1010,22 @@
         },
 
         _pageData: function () {
+            // Server-side mode: server already sliced the data — return as-is.
+            if (typeof this._config.dataLoader === 'function') {
+                return this._allData;
+            }
+            // Client-side mode: slice locally.
             var start = (this._page - 1) * this._pageSize;
             return this._filtered.slice(start, start + this._pageSize);
         },
 
         _totalPages: function () {
+            // Server-side mode: use the total count the server reported.
+            if (typeof this._config.dataLoader === 'function' &&
+                typeof this._serverTotalCount === 'number') {
+                return Math.max(1, Math.ceil(this._serverTotalCount / this._pageSize));
+            }
+            // Client-side mode: derive from local filtered length.
             return Math.max(1, Math.ceil(this._filtered.length / this._pageSize));
         },
 
@@ -1125,7 +1150,12 @@
         _renderTitle: function () {
             var el = document.getElementById(this._uid + '_titlebar');
             if (!el) return;
-            var count = this._filtered.length || this._allData.length;
+            // Server-side mode: show the true total from the server.
+            // Client-side mode: show the filtered local count.
+            var count = (typeof this._config.dataLoader === 'function' &&
+                typeof this._serverTotalCount === 'number')
+                ? this._serverTotalCount
+                : (this._filtered.length || this._allData.length);
             var label = this._config.title;
 
             // Only touch the <h2> label — the Add button is a stable sibling
@@ -1870,7 +1900,9 @@
             var el = document.getElementById(this._uid + '_pager');
             if (!el) return;
             var self = this;
-            var total = this._filtered.length;
+            var isServerMode = typeof this._config.dataLoader === 'function' &&
+                typeof this._serverTotalCount === 'number';
+            var total = isServerMode ? this._serverTotalCount : this._filtered.length;
             var tp = this._totalPages();
             var p = this._page;
             var start = ((p - 1) * this._pageSize) + 1;

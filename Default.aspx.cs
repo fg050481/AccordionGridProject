@@ -15,106 +15,180 @@ namespace AccordionGridProject
         {
             if (!IsPostBack)
             {
-                LoadGridData();
+                LoadFirstPage();
             }
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // STEP 1  — Get data from the "service"
-        //           Right now this calls a hardcoded stub below.
-        //           Later: swap FakePoaFormsService for your real service.
+        // PAGE LOAD — only push the FIRST page + totalCount to the browser.
+        //
+        // The grid's dataLoader callback handles every subsequent page/search/
+        // sort/filter request via the GetPage WebMethod below, so the initial
+        // payload stays small regardless of how many total records exist.
         // ─────────────────────────────────────────────────────────────────────
-        private void LoadGridData()
+        private void LoadFirstPage()
         {
-            // ── Call the service (currently fake / hardcoded) ──────────────
+            const int firstPageSize = 10;
+
             int totalCount;
             var data = FakePoaFormsService.GetAllForms(
-                itemsPerPage: 200,
+                itemsPerPage: firstPageSize,
                 pageNumber: 1,
                 totalCount: out totalCount
             );
 
-            // ── Flatten to a shape that matches the JS column/editField keys ─
-            //    Property names here MUST match the key: values in Default.aspx.
-            var result = data.Select(x => new
+            var result = FlattenRecords(data);
+
+            var payload = new
+            {
+                items = result,
+                totalCount = totalCount,
+                pageSize = firstPageSize,
+                page = 1
+            };
+
+            var json = JsonConvert.SerializeObject(payload, new JsonSerializerSettings
+            {
+                StringEscapeHandling = StringEscapeHandling.EscapeHtml,
+                NullValueHandling = NullValueHandling.Include
+            });
+
+            // Hidden field — reliable across Master Pages and ScriptManager
+            HiddenGridData.Value = json;
+
+            ClientScript.RegisterStartupScript(
+                GetType(), "poaInitialData",
+                "window.poaInitialData = " + json + ";",
+                addScriptTags: true);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // GetPage WebMethod — called by the AccordionGrid dataLoader on every
+        // page change, search, sort, or filter action.
+        //
+        // Receives a JSON body: { page, pageSize, search, filter, sortKey, sortDir }
+        // Returns:              { items: [...], totalCount: N }
+        //
+        // Your real page will replace FakePoaFormsService with your injected
+        // IPoaFormsService and build a real PoaFormFilter from the params.
+        // ─────────────────────────────────────────────────────────────────────
+        [WebMethod]
+        public static string GetPage(int page, int pageSize,
+                                     string search, string filter,
+                                     string sortKey, string sortDir)
+        {
+            // Guard sensible values
+            if (page <= 0) page = 1;
+            if (pageSize <= 0) pageSize = 10;
+            if (pageSize > 100) pageSize = 100;   // cap — protect the server
+
+            int totalCount;
+            var data = FakePoaFormsService.GetAllForms(
+                itemsPerPage: pageSize,
+                pageNumber: page,
+                totalCount: out totalCount,
+                search: search,
+                filterState: filter,
+                sortKey: sortKey,
+                sortDir: sortDir
+            );
+
+            var result = FlattenRecords(data);
+
+            // WebMethod wraps the return in { "d": "..." } — the JS unwraps it.
+            return JsonConvert.SerializeObject(new
+            {
+                items = result,
+                totalCount = totalCount
+            });
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Shared flattener — maps the model to the JS property name contract.
+        // Property names MUST match the key: values in Default.aspx JS.
+        // ─────────────────────────────────────────────────────────────────────
+        private static IEnumerable<object> FlattenRecords(IEnumerable<PoaFormModel> data)
+        {
+            return data.Select(x => (object)new
             {
                 x.Id,
                 x.Description,
                 x.State,
                 x.Active,
                 x.MailCenterId,
-
-                // Classification
                 x.ServiceType,
                 x.FormType,
                 x.FormUse,
                 x.PoaType,
-
-                // Processing
                 x.SignatureType,
                 x.OnlineRequirement,
                 x.ReturnType,
-
-                // Workflow status (drives badge colours in the grid)
                 x.ExtractionStatus,
                 x.MappingStatus,
-
-                // Document (read-only display)
                 x.DocumentReference,
                 x.FileName,
                 x.FileExtension,
-
                 x.Notes
             }).ToList();
-
-            // ── Serialise ─────────────────────────────────────────────────────
-            var json = JsonConvert.SerializeObject(result, new JsonSerializerSettings
-            {
-                StringEscapeHandling = StringEscapeHandling.EscapeHtml,
-                NullValueHandling = NullValueHandling.Include
-            });
-
-            // ── Push to the browser ───────────────────────────────────────────
-            //
-            // WHY NOT RegisterStartupScript alone?
-            //   RegisterStartupScript injects a <script> block just before </form>.
-            //   If a ScriptManager is on the page, or the page uses async postbacks,
-            //   the injection point can shift and the variable may not yet exist when
-            //   the init <script> at the bottom of the page runs.
-            //
-            // RELIABLE PATTERN: store the JSON in a hidden field + fall back to
-            //   RegisterStartupScript.  The init script reads the hidden field first,
-            //   then falls back to window.poaTemplatesData.
-            //   This works with Master Pages, ScriptManager, and plain WebForms.
-            //
-            // Hidden field (always present in rendered HTML, no timing issue):
-            HiddenGridData.Value = json;
-
-            // Also set window variable via RegisterStartupScript as secondary path:
-            var script = "window.poaTemplatesData = " + json + ";";
-            ClientScript.RegisterStartupScript(
-                type: GetType(),
-                key: "poaTemplatesData",
-                script: script,
-                addScriptTags: true
-            );
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // STEP 2  — Fake service
-        //           Simulates what PoaFormsService.GetAllForms() will return.
-        //           Delete this class once you wire up the real service.
+        // FAKE SERVICE — simulates what your real IPoaFormsService does.
+        // Supports server-side search, filter, sort, and pagination so the
+        // dataLoader pathway can be tested end-to-end without a real DB.
+        // Delete this class when you wire up the real service.
         // ─────────────────────────────────────────────────────────────────────
         private static class FakePoaFormsService
         {
             public static List<PoaFormModel> GetAllForms(
                 int itemsPerPage,
                 int pageNumber,
-                out int totalCount)
+                out int totalCount,
+                string search = null,
+                string filterState = null,
+                string sortKey = null,
+                string sortDir = null)
             {
-                var all = GetSeedData();
-                totalCount = all.Count;
-                return all
+                var all = GetSeedData().AsEnumerable();
+
+                // ── Search (matches Description or State) ──────────────────
+                if (!string.IsNullOrWhiteSpace(search))
+                {
+                    var s = search.ToLowerInvariant();
+                    all = all.Where(r =>
+                        (r.Description ?? "").ToLowerInvariant().Contains(s) ||
+                        (r.State ?? "").ToLowerInvariant().Contains(s) ||
+                        (r.ServiceType ?? "").ToLowerInvariant().Contains(s));
+                }
+
+                // ── Filter by State ────────────────────────────────────────
+                if (!string.IsNullOrWhiteSpace(filterState))
+                    all = all.Where(r => r.State == filterState);
+
+                // ── Sort ───────────────────────────────────────────────────
+                if (!string.IsNullOrWhiteSpace(sortKey))
+                {
+                    bool desc = string.Equals(sortDir, "desc",
+                                              StringComparison.OrdinalIgnoreCase);
+                    if (sortKey == "Description")
+                        all = desc ? all.OrderByDescending(r => r.Description) : all.OrderBy(r => r.Description);
+                    else if (sortKey == "State")
+                        all = desc ? all.OrderByDescending(r => r.State) : all.OrderBy(r => r.State);
+                    else if (sortKey == "ExtractionStatus")
+                        all = desc ? all.OrderByDescending(r => r.ExtractionStatus) : all.OrderBy(r => r.ExtractionStatus);
+                    else if (sortKey == "MappingStatus")
+                        all = desc ? all.OrderByDescending(r => r.MappingStatus) : all.OrderBy(r => r.MappingStatus);
+                    else
+                        all = all.OrderBy(r => r.Id);
+                }
+
+                // ── Count AFTER filter/search, BEFORE paging ──────────────
+                // This mirrors exactly what your real repository does with
+                // query.Count() before .Skip().Take().
+                var list = all.ToList();
+                totalCount = list.Count;
+
+                return list
                     .Skip((pageNumber - 1) * itemsPerPage)
                     .Take(itemsPerPage)
                     .ToList();
