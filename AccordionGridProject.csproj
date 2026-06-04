@@ -82,12 +82,16 @@
     <Compile Include="Default.aspx.designer.cs">
       <DependentUpon>Default.aspx</DependentUpon>
     </Compile>
+    <Compile Include="DownloadDocument.ashx.cs">
+      <DependentUpon>DownloadDocument.ashx</DependentUpon>
+    </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="UploadDocument.ashx.cs">
       <DependentUpon>UploadDocument.ashx</DependentUpon>
     </Compile>
   </ItemGroup>
   <ItemGroup>
+    <Content Include="DownloadDocument.ashx" />
     <None Include="packages.config" />
     <Content Include="UploadDocument.ashx" />
     <None Include="Web.Debug.config">

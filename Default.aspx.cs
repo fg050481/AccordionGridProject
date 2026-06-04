@@ -128,7 +128,10 @@ namespace AccordionGridProject
                 x.DocumentReference,
                 x.FileName,
                 x.FileExtension,
-                x.Notes
+                x.Notes,
+                LastUpdated = x.LastUpdated.HasValue
+                    ? x.LastUpdated.Value.ToString("MM/dd/yyyy hh:mm tt")
+                    : ""
             }).ToList();
         }
 
@@ -207,7 +210,8 @@ namespace AccordionGridProject
                         OnlineRequirement = "None",   ReturnType = "Mail",
                         ExtractionStatus  = "Completed",  MappingStatus = "Mapped",
                         DocumentReference = "REF-TX-001", FileName = "tx_poa.pdf",
-                        FileExtension = ".pdf", Notes = ""
+                        FileExtension = ".pdf", Notes = "",
+                        LastUpdated = new DateTime(2025, 5, 10, 9, 30, 0)
                     },
                     new PoaFormModel
                     {
@@ -218,7 +222,8 @@ namespace AccordionGridProject
                         OnlineRequirement = "Required", ReturnType = "E-File",
                         ExtractionStatus  = "Completed",  MappingStatus = "Partial",
                         DocumentReference = "REF-CA-002", FileName = "ca_corp_poa.pdf",
-                        FileExtension = ".pdf", Notes = "Needs review"
+                        FileExtension = ".pdf", Notes = "Needs review",
+                        LastUpdated = new DateTime(2025, 4, 22, 14, 15, 0)
                     },
                     new PoaFormModel
                     {
@@ -229,7 +234,8 @@ namespace AccordionGridProject
                         OnlineRequirement = "Optional", ReturnType = "Fax",
                         ExtractionStatus  = "In Progress", MappingStatus = "Not Mapped",
                         DocumentReference = "REF-OH-003", FileName = "oh_poa.pdf",
-                        FileExtension = ".pdf", Notes = ""
+                        FileExtension = ".pdf", Notes = "",
+                        LastUpdated = new DateTime(2025, 5, 1, 11, 0, 0)
                     },
                     new PoaFormModel
                     {
@@ -240,7 +246,8 @@ namespace AccordionGridProject
                         OnlineRequirement = "None", ReturnType = "Portal",
                         ExtractionStatus  = "Not Started", MappingStatus = "Not Mapped",
                         DocumentReference = "",           FileName = "",
-                        FileExtension = "", Notes = "Pending upload"
+                        FileExtension = "", Notes = "Pending upload",
+                        LastUpdated = null
                     },
                     new PoaFormModel
                     {
@@ -251,7 +258,8 @@ namespace AccordionGridProject
                         OnlineRequirement = "None", ReturnType = "Mail",
                         ExtractionStatus  = "Error", MappingStatus = "Not Mapped",
                         DocumentReference = "REF-CA-005", FileName = "ca_estate_poa.pdf",
-                        FileExtension = ".pdf", Notes = "Re-extraction required"
+                        FileExtension = ".pdf", Notes = "Re-extraction required",
+                        LastUpdated = new DateTime(2025, 3, 18, 8, 45, 0)
                     },
                     new PoaFormModel
                     {
@@ -262,7 +270,8 @@ namespace AccordionGridProject
                         OnlineRequirement = "Required", ReturnType = "E-File",
                         ExtractionStatus  = "Completed", MappingStatus = "Mapped",
                         DocumentReference = "REF-NY-006", FileName = "ny_irs_poa.pdf",
-                        FileExtension = ".pdf", Notes = ""
+                        FileExtension = ".pdf", Notes = "",
+                        LastUpdated = new DateTime(2025, 5, 9, 16, 20, 0)
                     },
                     new PoaFormModel
                     {
@@ -273,7 +282,8 @@ namespace AccordionGridProject
                         OnlineRequirement = "Optional", ReturnType = "Mail",
                         ExtractionStatus  = "Not Started", MappingStatus = "Not Mapped",
                         DocumentReference = "",           FileName = "",
-                        FileExtension = "", Notes = ""
+                        FileExtension = "", Notes = "",
+                        LastUpdated = null
                     },
                     new PoaFormModel
                     {
@@ -284,7 +294,8 @@ namespace AccordionGridProject
                         OnlineRequirement = "None", ReturnType = "Fax",
                         ExtractionStatus  = "Completed", MappingStatus = "Partial",
                         DocumentReference = "REF-OH-008", FileName = "oh_rev_poa.pdf",
-                        FileExtension = ".pdf", Notes = ""
+                        FileExtension = ".pdf", Notes = "",
+                        LastUpdated = new DateTime(2025, 4, 30, 10, 0, 0)
                     },
                     new PoaFormModel
                     {
@@ -295,7 +306,8 @@ namespace AccordionGridProject
                         OnlineRequirement = "None", ReturnType = "Portal",
                         ExtractionStatus  = "Not Started", MappingStatus = "Not Mapped",
                         DocumentReference = "",           FileName = "",
-                        FileExtension = "", Notes = "Waiting for approval"
+                        FileExtension = "", Notes = "Waiting for approval",
+                        LastUpdated = null
                     },
                     new PoaFormModel
                     {
@@ -306,7 +318,8 @@ namespace AccordionGridProject
                         OnlineRequirement = "Optional", ReturnType = "Mail",
                         ExtractionStatus  = "In Progress", MappingStatus = "Not Mapped",
                         DocumentReference = "REF-MI-010", FileName = "mi_biz_poa.pdf",
-                        FileExtension = ".pdf", Notes = ""
+                        FileExtension = ".pdf", Notes = "",
+                        LastUpdated = new DateTime(2025, 5, 5, 13, 10, 0)
                     },
                     new PoaFormModel
                     {
@@ -317,7 +330,8 @@ namespace AccordionGridProject
                         OnlineRequirement = "Required", ReturnType = "E-File",
                         ExtractionStatus  = "Not Started", MappingStatus = "Not Mapped",
                         DocumentReference = "",           FileName = "",
-                        FileExtension = "", Notes = ""
+                        FileExtension = "", Notes = "",
+                        LastUpdated = null
                     },
                     new PoaFormModel
                     {
@@ -328,7 +342,8 @@ namespace AccordionGridProject
                         OnlineRequirement = "None", ReturnType = "Mail",
                         ExtractionStatus  = "Completed", MappingStatus = "Mapped",
                         DocumentReference = "REF-IL-012", FileName = "il_corp_poa.pdf",
-                        FileExtension = ".pdf", Notes = ""
+                        FileExtension = ".pdf", Notes = "",
+                        LastUpdated = new DateTime(2025, 5, 8, 7, 55, 0)
                     }
                 };
             }
@@ -359,6 +374,7 @@ namespace AccordionGridProject
             public string FileName { get; set; }
             public string FileExtension { get; set; }
             public string Notes { get; set; }
+            public DateTime? LastUpdated { get; set; }
         }
     }
 }

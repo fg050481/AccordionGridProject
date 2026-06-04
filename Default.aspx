@@ -124,6 +124,14 @@
                 badge: { map: { 'Mapped': 'success', 'Partial': 'info', 'Not Mapped': 'default' }, defaultClass: 'default' }
             },
             {
+                key: 'LastUpdated', label: 'Last Updated', width: '150px', sortable: true,
+                align: 'center',
+                format: function (v) {
+                    if (!v) return '<span style="color:#9aa09a;font-size:12px;">—</span>';
+                    return '<span style="font-size:12px;">' + v + '</span>';
+                }
+            },
+            {
                 key: 'Active', label: 'Active', width: '70px', align: 'center',
                 format: function (v) {
                     return v
@@ -197,6 +205,12 @@
             {
                 key: 'generate', label: 'Generate', cssClass: 'ag-btn-primary',
                 visible: function (r) { return r.MappingStatus === 'Mapped'; }
+            },
+            {
+                key: 'download', label: 'Download',
+                visible: function (r) {
+                    return !!(r.DocumentReference && r.DocumentReference.length > 0);
+                }
             },
             { key: 'delete', label: 'Delete', cssClass: 'ag-btn-danger' }
         ];
@@ -391,6 +405,29 @@
                         log('ok', 'GENERATE clicked — id=' + e.record.Id);
                         /* In production: window.location.href = '/POA/Generate.aspx?id=' + e.record.Id */
                         alert('Generate clicked for: ' + e.record.Description);
+                        break;
+
+                    case 'download':
+                        // Mirrors GetXMFaxReceipt: passes blobName, fileName, fileExt
+                        // to the handler which fetches the blob stream and returns it
+                        // as a file attachment.
+                        if (e.record.DocumentReference) {
+                            var url = 'DownloadDocument.ashx' +
+                                '?blobName=' + encodeURIComponent(e.record.DocumentReference) +
+                                '&fileName=' + encodeURIComponent(e.record.FileName || e.record.DocumentReference) +
+                                '&fileExt=' + encodeURIComponent(e.record.FileExtension || '.pdf');
+                            log('info', 'Download → ' + url);
+                            // Open in a hidden iframe so the page doesn't navigate away.
+                            // The browser's download dialog handles the rest.
+                            var dlFrame = document.getElementById('ag-dl-frame');
+                            if (!dlFrame) {
+                                dlFrame = document.createElement('iframe');
+                                dlFrame.id = 'ag-dl-frame';
+                                dlFrame.style.display = 'none';
+                                document.body.appendChild(dlFrame);
+                            }
+                            dlFrame.src = url;
+                        }
                         break;
 
                     case 'delete':

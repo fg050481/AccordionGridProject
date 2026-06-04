@@ -60,6 +60,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 8px;
     padding: 10px 14px;
     background: var(--ag-surface);
     border: 1px solid var(--ag-border);
@@ -96,6 +97,26 @@
 }
 .ag-add-btn:hover { background: var(--ag-green-dark); }
 .ag-add-btn svg { flex-shrink: 0; }
+
+/* ── Refresh button (sits left of Add button in title bar) ── */
+.ag-refresh-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 12px;
+    background: var(--ag-surface);
+    color: var(--ag-green-mid);
+    border: 1px solid var(--ag-border);
+    border-radius: var(--ag-radius);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--ag-font);
+    letter-spacing: .02em;
+    transition: background .15s, border-color .15s;
+}
+.ag-refresh-btn:hover  { background: var(--ag-row-hover); border-color: var(--ag-green-mid); }
+.ag-refresh-btn:disabled { opacity: .6; cursor: default; }
 
 /* ── Search / Filter Bar ── */
 .ag-toolbar {
@@ -366,11 +387,13 @@
 }
 .ag-field.ag-field-full { grid-column: 1 / -1; }
 .ag-field-label {
-    font-size: 11.5px;
-    font-weight: 600;
-    color: var(--ag-text-mid);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--ag-text-dark);
     text-transform: uppercase;
-    letter-spacing: .04em;
+    letter-spacing: .06em;
+    margin-bottom: 3px;
+    display: block;
 }
 .ag-field-required::after {
     content: ' *';
@@ -703,6 +726,8 @@
         title: 'Records',
         showAddButton: true,
         addButtonLabel: '+ Add New',
+        showRefreshButton: true,         // show a Refresh button in the title bar
+        onRefresh: null,                 // callback fired when Refresh is clicked
         singleExpand: false,          // true = only one row open at a time
         expandMode: 'edit',           // 'edit' | 'quickview'
         pageSize: 10,
@@ -830,7 +855,7 @@
             // Restore functions that were wiped by deepClone
             var fns = ['onLoad', 'onRowExpand', 'onRowCollapse', 'onSave', 'onDelete',
                 'onActionClick', 'onAddNew', 'onPageChange', 'onSearch',
-                'onSort', 'onFilterChange', 'dataLoader'];
+                'onSort', 'onFilterChange', 'onRefresh', 'dataLoader'];
             fns.forEach(function (fn) {
                 if (typeof opts[fn] === 'function') cfg[fn] = opts[fn];
             });
@@ -871,6 +896,40 @@
 
         refresh: function () {
             this._page = 1;
+            this._apply();
+        },
+
+        // Clears all search, filter, sort state back to defaults,
+        // resets the toolbar DOM controls, collapses all open rows,
+        // goes back to page 1, then fires a fresh load.
+        // Call this for a full "reset to initial state" refresh.
+        resetState: function () {
+            // ── Internal state ─────────────────────────────────────────────
+            this._page = 1;
+            this._searchVal = '';
+            this._filterVal = '';
+            this._sortKey = null;
+            this._sortDir = 'asc';
+            this._expanded = {};
+            this._editMode = {};
+
+            // ── DOM: search input ──────────────────────────────────────────
+            var searchEl = document.getElementById(this._uid + '_search');
+            if (searchEl) searchEl.value = '';
+
+            // ── DOM: filter dropdown ───────────────────────────────────────
+            var filterEl = document.getElementById(this._uid + '_filter');
+            if (filterEl) filterEl.value = '';
+
+            // ── DOM: column sort indicators ────────────────────────────────
+            var header = document.getElementById(this._uid + '_header');
+            if (header) {
+                header.querySelectorAll('[data-sort]').forEach(function (el) {
+                    el.removeAttribute('data-sort');
+                });
+            }
+
+            // ── Reload ─────────────────────────────────────────────────────
             this._apply();
         },
 
@@ -1100,8 +1159,34 @@
             titleBar.className = 'ag-title-bar';
             container.appendChild(titleBar);
 
-            // Add button — created ONCE here so the listener is never lost
-            // when _renderTitle() refreshes the count label.
+            // Title bar — layout: [h2 title/count LEFT] [Refresh button RIGHT] [Add button RIGHT]
+            // The h2 is inserted first so it sits on the left naturally (flex row, h2 has flex:1).
+            // Refresh and Add are appended after so they cluster on the right.
+
+            // Refresh button (optional) — right of title, left of Add button.
+            if (this._config.showRefreshButton) {
+                var self1 = this;
+                var refBtn = document.createElement('button');
+                refBtn.id = this._uid + '_refresh';
+                refBtn.className = 'ag-refresh-btn';
+                refBtn.setAttribute('type', 'button');
+                refBtn.setAttribute('aria-label', 'Refresh');
+                refBtn.innerHTML = this._svgRefresh() + 'Refresh';
+                refBtn.addEventListener('click', function () {
+                    var ico = refBtn.querySelector('.ag-refresh-icon');
+                    if (ico) ico.style.animation = 'ag-spin .7s linear infinite';
+                    refBtn.disabled = true;
+                    self1.resetState();
+                    self1._fire('onRefresh', {});
+                    setTimeout(function () {
+                        refBtn.disabled = false;
+                        if (ico) ico.style.animation = '';
+                    }, 800);
+                });
+                titleBar.appendChild(refBtn);
+            }
+
+            // Add button — rightmost element in the title bar.
             if (this._config.showAddButton) {
                 var self0 = this;
                 var addBtn = document.createElement('button');
@@ -1164,9 +1249,10 @@
             if (!h2) {
                 h2 = document.createElement('h2');
                 h2.className = 'ag-title-h2';
-                // Insert before the button (which may already exist)
-                var existingBtn = el.querySelector('.ag-add-btn');
-                el.insertBefore(h2, existingBtn || null);
+                h2.style.flex = '1';   // takes all available left-side space
+                // Always insert before the first button (Refresh or Add)
+                var firstBtn = el.querySelector('.ag-refresh-btn, .ag-add-btn');
+                el.insertBefore(h2, firstBtn || null);
             }
             h2.innerHTML = escapeHtml(label) +
                 ' <span class="ag-count">(' + count + ' Records)</span>';
@@ -1970,6 +2056,13 @@
             return '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2">' +
                 '<line x1="6" y1="1" x2="6" y2="11"/><line x1="1" y1="6" x2="11" y2="6"/></svg>';
         },
+        _svgRefresh: function () {
+            return '<svg class="ag-refresh-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" ' +
+                'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ' +
+                'style="display:inline-block;vertical-align:middle;">' +
+                '<polyline points="23 4 23 10 17 10"/>' +
+                '<path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>';
+        },
         _svgEmpty: function () {
             return '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="display:block;margin:0 auto 8px;">' +
                 '<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="16" x2="12" y2="16"/></svg>';
@@ -2045,11 +2138,11 @@
 
         // Checkboxes shown as Yes/No
         if (field.type === 'checkbox') {
-            return '<div class="' + cls + ' ag-field-check" style="padding-top:20px;">' +
+            return '<div class="' + cls + ' ag-field-check" style="padding-top:18px;">' +
                 '<span style="width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;' +
-                'border:1px solid #b0b8b0;border-radius:2px;background:#f8f9f8;flex-shrink:0;">' +
+                'border:1px solid #b0b8b0;border-radius:2px;background:#f8f9f8;flex-shrink:0;font-size:12px;">' +
                 (val ? '&#10003;' : '') + '</span>' +
-                '<span class="ag-field-label" style="text-transform:none;font-size:13px;font-weight:500;letter-spacing:0;color:#1a1e1a;">' +
+                '<span style="font-size:13.5px;font-weight:500;color:#1a1e1a;margin-left:6px;">' +
                 escapeHtml(field.label) + '</span></div>';
         }
 
@@ -2067,7 +2160,8 @@
         var empty = display === '';
         return '<div class="' + cls + '">' +
             '<label class="ag-field-label">' + escapeHtml(field.label) + '</label>' +
-            '<div style="padding:7px 0 4px;font-size:13px;color:' + (empty ? '#9aa09a' : '#1a1e1a') + ';min-height:28px;">' +
+            '<div style="font-size:13px;font-weight:400;color:' +
+            (empty ? '#b0b8b0' : '#3a403a') + ';min-height:26px;line-height:1.4;">' +
             (empty ? '—' : display) + '</div>' +
             '</div>';
     }
