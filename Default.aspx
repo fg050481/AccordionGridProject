@@ -365,60 +365,124 @@
             },
 
             onSave: function (e) {
+                // Build a clean payload containing only the fields PoaFormDto
+                // expects.  e.record also contains internal grid keys (_agId,
+                // ExtractionStatus, etc.) that would cause a 500 if sent raw.
+                // Active comes from a checkbox so coerce to bool explicitly.
+                var dto = {
+                    Id: e.record.Id || 0,
+                    Description: e.record.Description || '',
+                    State: e.record.State || '',
+                    Active: e.record.Active === true || e.record.Active === 'true' || e.record.Active === 'on',
+                    MailCenterId: parseInt(e.record.MailCenterId, 10) || null,
+                    ServiceType: e.record.ServiceType || '',
+                    FormType: e.record.FormType || '',
+                    FormUse: e.record.FormUse || '',
+                    PoaType: e.record.PoaType || '',
+                    SignatureType: e.record.SignatureType || '',
+                    OnlineRequirement: e.record.OnlineRequirement || '',
+                    ReturnType: e.record.ReturnType || '',
+                    DocumentReference: e.record.DocumentReference || '',
+                    FileName: e.record.FileName || '',
+                    Notes: e.record.Notes || ''
+                };
+
                 if (e.isNew) {
-                    log('ok', 'INSERT simulated — record: ' + JSON.stringify(e.record));
-                    /* In production: POST to WebMethod InsertForm */
+                    // ── INSERT ────────────────────────────────────────────────
+                    // ASP.NET WebMethod with a DTO parameter requires the body
+                    // wrapped as { "form": { ... } } matching the param name.
+                    callPageMethod('InsertForm', { form: dto }, function (resp) {
+                        grid.updateRecord(e.record._agId, {
+                            Id: resp.Id,
+                            LastUpdated: resp.LastUpdated
+                        });
+                        log('ok', 'INSERT confirmed — newId=' + resp.Id
+                            + '  updated=' + resp.LastUpdated);
+                    });
                 } else {
-                    log('ok', 'UPDATE simulated — id=' + e.record.Id
-                        + '  description="' + e.record.Description + '"');
-                    /* In production: POST to WebMethod UpdateForm */
+                    // ── UPDATE ────────────────────────────────────────────────
+                    callPageMethod('UpdateForm', { form: dto }, function (resp) {
+                        grid.updateRecord(e.record._agId, {
+                            LastUpdated: resp.LastUpdated
+                        });
+                        log('ok', 'UPDATE confirmed — id=' + e.record.Id
+                            + '  updated=' + resp.LastUpdated);
+                    });
                 }
             },
 
             onDelete: function (e) {
-                log('warn', 'DELETE simulated — id=' + e.record.Id);
-                /* In production: POST to WebMethod DeleteForm */
+                // Fired by the form Cancel/Delete button inside the expanded panel.
+                // The action-button Delete path is handled in onActionClick below.
+                log('warn', 'onDelete fired — id=' + e.record.Id);
             },
 
             onActionClick: function (e) {
                 switch (e.action) {
 
+                    // ── EDIT ──────────────────────────────────────────────────
                     case 'edit':
-                        // Opens the row in EDIT mode (all fields are inputs).
-                        // Clicking the ▶ arrow opens in READ-ONLY view instead.
+                        // Expands the row in full edit mode (all fields editable).
+                        // The ▶ arrow expands in read-only view mode instead.
                         grid.expandRowForEdit(e.id);
                         break;
 
+                    // ── EXTRACT ───────────────────────────────────────────────
+                    // 1. POST to TriggerExtraction  → sets status "In Progress",
+                    //    enqueues Hangfire job, returns JobId.
+                    // 2. Badge flips to "In Progress" immediately.
+                    // 3. Poll GetExtractionStatus every 5 s until Completed/Error.
+                    // 4. Badge flips to final status and polling stops.
                     case 'extract':
-                        /* Simulate: update status badge without a real server call */
-                        grid.updateRecord(e.id, { ExtractionStatus: 'In Progress' });
-                        log('info', 'EXTRACT queued — id=' + e.record.Id);
+                        callPageMethod('TriggerExtraction', { Id: e.record.Id },
+                            function (resp) {
+                                grid.updateRecord(e.id, { ExtractionStatus: resp.Status });
+                                log('info', 'Extraction queued — id=' + e.record.Id
+                                    + '  jobId=' + resp.JobId);
+                                startExtractionPolling(e.id, e.record.Id, resp.JobId);
+                            });
                         break;
 
+                    // ── MAP ───────────────────────────────────────────────────
+                    // Calls TriggerMapping which can return a RedirectUrl for the
+                    // mapping page OR update the status inline.
+                    // In production: uncomment window.location.href redirect.
                     case 'map':
-                        /* Simulate: mark as partially mapped */
-                        grid.updateRecord(e.id, { MappingStatus: 'Partial' });
-                        log('info', 'MAP clicked — id=' + e.record.Id);
+                        callPageMethod('TriggerMapping', { Id: e.record.Id },
+                            function (resp) {
+                                grid.updateRecord(e.id, { MappingStatus: resp.Status });
+                                log('info', 'Mapping triggered — id=' + e.record.Id
+                                    + '  status=' + resp.Status);
+                                // In production, navigate to mapping page:
+                                // if (resp.RedirectUrl) window.location.href = resp.RedirectUrl;
+                            });
                         break;
 
+                    // ── GENERATE ─────────────────────────────────────────────
+                    // Calls GenerateDocument which triggers the merge pipeline.
+                    // In production: navigate to the generated document URL.
                     case 'generate':
-                        log('ok', 'GENERATE clicked — id=' + e.record.Id);
-                        /* In production: window.location.href = '/POA/Generate.aspx?id=' + e.record.Id */
-                        alert('Generate clicked for: ' + e.record.Description);
+                        callPageMethod('GenerateDocument', { Id: e.record.Id },
+                            function (resp) {
+                                log('ok', 'Generate confirmed — id=' + e.record.Id);
+                                // In production, navigate to the output:
+                                // if (resp.RedirectUrl) window.location.href = resp.RedirectUrl;
+                                alert('Document generated for: ' + e.record.Description);
+                            });
                         break;
 
+                    // ── DOWNLOAD ─────────────────────────────────────────────
+                    // Fetches the blob from DownloadDocument.ashx (mirrors
+                    // GetXMFaxReceipt: blobName → stream → file attachment).
                     case 'download':
-                        // Mirrors GetXMFaxReceipt: passes blobName, fileName, fileExt
-                        // to the handler which fetches the blob stream and returns it
-                        // as a file attachment.
                         if (e.record.DocumentReference) {
                             var url = 'DownloadDocument.ashx' +
                                 '?blobName=' + encodeURIComponent(e.record.DocumentReference) +
                                 '&fileName=' + encodeURIComponent(e.record.FileName || e.record.DocumentReference) +
                                 '&fileExt=' + encodeURIComponent(e.record.FileExtension || '.pdf');
                             log('info', 'Download → ' + url);
-                            // Open in a hidden iframe so the page doesn't navigate away.
-                            // The browser's download dialog handles the rest.
+                            // Hidden iframe: triggers browser save dialog without
+                            // navigating away from the page.
                             var dlFrame = document.getElementById('ag-dl-frame');
                             if (!dlFrame) {
                                 dlFrame = document.createElement('iframe');
@@ -430,10 +494,21 @@
                         }
                         break;
 
+                    // ── DELETE ────────────────────────────────────────────────
+                    // Confirms with the user, calls DeleteForm WebMethod, then
+                    // removes the row from the grid only after server confirms.
                     case 'delete':
                         if (confirm('Delete "' + e.record.Description + '"?')) {
-                            grid.removeRecord(e.id);
-                            log('warn', 'DELETE — id=' + e.record.Id);
+                            callPageMethod('DeleteForm', { Id: e.record.Id },
+                                function (resp) {
+                                    if (resp && resp.Success) {
+                                        grid.removeRecord(e.id);
+                                        log('warn', 'DELETE confirmed — id=' + e.record.Id
+                                            + ' "' + e.record.Description + '"');
+                                    } else {
+                                        log('err', 'DELETE failed — id=' + e.record.Id);
+                                    }
+                                });
                         }
                         break;
                 }
@@ -444,6 +519,69 @@
             onSort: function (e) { log('info', 'Sort: ' + e.key + ' ' + e.dir); },
             onPageChange: function (e) { log('info', 'Page: ' + e.page); }
         });
+
+        /* ── Extraction polling ───────────────────────────────────────
+           After TriggerExtraction succeeds, poll GetExtractionStatus
+           every 5 seconds until the job reaches Completed or Error.
+           The badge updates in real time with each status response.
+        ──────────────────────────────────────────────────────────── */
+        function startExtractionPolling(agId, formId, jobId) {
+            var MAX_POLLS = 24;   // 24 × 5s = 2 minutes max before giving up
+            var polls = 0;
+
+            var timer = setInterval(function () {
+                polls++;
+                callPageMethod('GetExtractionStatus', { Id: formId },
+                    function (resp) {
+                        log('info', 'Poll #' + polls + ' — id=' + formId
+                            + '  status=' + resp.Status
+                            + (jobId ? '  job=' + jobId : ''));
+
+                        grid.updateRecord(agId, { ExtractionStatus: resp.Status });
+
+                        if (resp.Status === 'Completed' || resp.Status === 'Error') {
+                            clearInterval(timer);
+                            log(resp.Status === 'Completed' ? 'ok' : 'err',
+                                'Extraction ' + resp.Status + ' — id=' + formId);
+                        } else if (polls >= MAX_POLLS) {
+                            clearInterval(timer);
+                            log('warn', 'Extraction polling timed out — id=' + formId);
+                        }
+                    });
+            }, 5000);   // poll every 5 seconds
+        }
+
+        /* ── Generic WebMethod caller ─────────────────────────────────
+           POSTs JSON to Default.aspx/<method>, unwraps ASP.NET's
+           { d: "json-string" } wrapper, parses the inner JSON, and
+           calls onSuccess(parsedResult).
+        ──────────────────────────────────────────────────────────── */
+        function callPageMethod(method, payload, onSuccess) {
+            fetch(window.location.pathname + '/' + method, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json; charset=utf-8',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify(payload),
+                credentials: 'same-origin'
+            })
+                .then(function (r) {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                })
+                .then(function (resp) {
+                    // WebMethods return { "d": "json-string" } — parse the inner value
+                    var inner = (resp && resp.d !== undefined) ? resp.d : resp;
+                    if (typeof inner === 'string') {
+                        try { inner = JSON.parse(inner); } catch (e) { /* scalar value */ }
+                    }
+                    if (onSuccess) onSuccess(inner);
+                })
+                .catch(function (err) {
+                    log('err', method + ' failed: ' + err.message);
+                });
+        }
 
         /* ── Load initial data ────────────────────────────────────────
            poaInitialData is { items:[...], totalCount:N, pageSize:N, page:1 }

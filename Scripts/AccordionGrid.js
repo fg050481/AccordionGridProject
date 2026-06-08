@@ -941,13 +941,31 @@
 
         updateRecord: function (id, patch) {
             var rec = this._findById(id);
-            if (rec) { Object.assign(rec, patch); this._apply(); }
+            if (!rec) return;
+            Object.assign(rec, patch);
+            // In server-side mode _apply() would re-fetch from the server,
+            // losing the in-memory patch.  Re-render the body directly instead
+            // so the badge/value updates instantly from the patched local record.
+            if (typeof this._config.dataLoader === 'function') {
+                this._renderBody();
+            } else {
+                this._apply();
+            }
         },
 
         removeRecord: function (id) {
             this._allData = this._allData.filter(function (r) { return r._agId !== id; });
             delete this._expanded[id];
-            this._apply();
+            delete this._editMode[id];
+            // Same as updateRecord: skip dataLoader in server-side mode.
+            if (typeof this._config.dataLoader === 'function') {
+                this._serverTotalCount = Math.max(0, (this._serverTotalCount || 1) - 1);
+                this._renderTitle();
+                this._renderBody();
+                this._renderPager();
+            } else {
+                this._apply();
+            }
         },
 
         getRecord: function (id) {
