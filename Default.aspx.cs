@@ -11,7 +11,7 @@ namespace AccordionGridProject
 {
     public partial class Default : System.Web.UI.Page
     {
-        protected void Page_Load(object sender, EventArgs e)
+       protected void Page_Load(object sender, EventArgs e)
         {
             if (!IsPostBack)
                 LoadFirstPage();
@@ -27,21 +27,21 @@ namespace AccordionGridProject
             int totalCount;
             var data = FakePoaFormsService.GetAllForms(
                 itemsPerPage: firstPageSize,
-                pageNumber: 1,
-                totalCount: out totalCount);
+                pageNumber:   1,
+                totalCount:   out totalCount);
 
             var payload = new
             {
-                items = FlattenRecords(data),
+                items      = FlattenRecords(data),
                 totalCount = totalCount,
-                pageSize = firstPageSize,
-                page = 1
+                pageSize   = firstPageSize,
+                page       = 1
             };
 
             var json = JsonConvert.SerializeObject(payload, new JsonSerializerSettings
             {
                 StringEscapeHandling = StringEscapeHandling.EscapeHtml,
-                NullValueHandling = NullValueHandling.Include
+                NullValueHandling    = NullValueHandling.Include
             });
 
             HiddenGridData.Value = json;
@@ -60,23 +60,23 @@ namespace AccordionGridProject
                                      string search, string filter,
                                      string sortKey, string sortDir)
         {
-            if (page <= 0) page = 1;
+            if (page     <= 0) page     = 1;
             if (pageSize <= 0) pageSize = 10;
             if (pageSize > 100) pageSize = 100;
 
             int totalCount;
             var data = FakePoaFormsService.GetAllForms(
                 itemsPerPage: pageSize,
-                pageNumber: page,
-                totalCount: out totalCount,
-                search: search,
-                filterState: filter,
-                sortKey: sortKey,
-                sortDir: sortDir);
+                pageNumber:   page,
+                totalCount:   out totalCount,
+                search:       search,
+                filterState:  filter,
+                sortKey:      sortKey,
+                sortDir:      sortDir);
 
             return JsonConvert.SerializeObject(new
             {
-                items = FlattenRecords(data),
+                items      = FlattenRecords(data),
                 totalCount = totalCount
             });
         }
@@ -98,7 +98,7 @@ namespace AccordionGridProject
         public static string InsertForm(PoaFormDto form)
         {
             // ── POC stub ────────────────────────────────────────────────────
-            var newId = new Random().Next(100, 9999);
+            var newId       = new Random().Next(100, 9999);
             var lastUpdated = DateTime.Now.ToString("MM/dd/yyyy hh:mm tt");
 
             System.Diagnostics.Trace.TraceInformation(
@@ -107,7 +107,7 @@ namespace AccordionGridProject
 
             return JsonConvert.SerializeObject(new
             {
-                Id = newId,
+                Id          = newId,
                 LastUpdated = lastUpdated
             });
         }
@@ -171,7 +171,7 @@ namespace AccordionGridProject
 
             return JsonConvert.SerializeObject(new
             {
-                JobId = fakeJobId,
+                JobId  = fakeJobId,
                 Status = "In Progress"
             });
         }
@@ -195,7 +195,7 @@ namespace AccordionGridProject
 
             return JsonConvert.SerializeObject(new
             {
-                Status = "Partial",
+                Status      = "Partial",
                 RedirectUrl = (string)null
             });
         }
@@ -209,7 +209,7 @@ namespace AccordionGridProject
 
             return JsonConvert.SerializeObject(new
             {
-                Success = true,
+                Success     = true,
                 RedirectUrl = (string)null
             });
         }
@@ -252,21 +252,22 @@ namespace AccordionGridProject
         // ─────────────────────────────────────────────────────────────────────
         public class PoaFormDto
         {
-            public int Id { get; set; }
-            public string Description { get; set; }
-            public string State { get; set; }
-            public bool Active { get; set; }
-            public int? MailCenterId { get; set; }
-            public string ServiceType { get; set; }
-            public string FormType { get; set; }
-            public string FormUse { get; set; }
-            public string PoaType { get; set; }
-            public string SignatureType { get; set; }
+            public int    Id                { get; set; }
+            public string Description       { get; set; }
+            public string State             { get; set; }
+            public bool   Active            { get; set; }
+            public int?   MailCenterId      { get; set; }
+            public string ServiceType       { get; set; }
+            public string FormType          { get; set; }
+            public string FormUse           { get; set; }
+            public string PoaType           { get; set; }
+            public string SignatureType     { get; set; }
             public string OnlineRequirement { get; set; }
-            public string ReturnType { get; set; }
+            public string ReturnType        { get; set; }
             public string DocumentReference { get; set; }
-            public string FileName { get; set; }
-            public string Notes { get; set; }
+            public string FileName          { get; set; }
+            public string FileExtension     { get; set; }
+            public string Notes             { get; set; }
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -275,13 +276,13 @@ namespace AccordionGridProject
         private static class FakePoaFormsService
         {
             public static List<PoaFormModel> GetAllForms(
-                int itemsPerPage,
-                int pageNumber,
+                int    itemsPerPage,
+                int    pageNumber,
                 out int totalCount,
-                string search = null,
+                string search      = null,
                 string filterState = null,
-                string sortKey = null,
-                string sortDir = null)
+                string sortKey     = null,
+                string sortDir     = null)
             {
                 var all = GetSeedData().AsEnumerable();
 
@@ -290,7 +291,7 @@ namespace AccordionGridProject
                     var s = search.ToLowerInvariant();
                     all = all.Where(r =>
                         (r.Description ?? "").ToLowerInvariant().Contains(s) ||
-                        (r.State ?? "").ToLowerInvariant().Contains(s) ||
+                        (r.State       ?? "").ToLowerInvariant().Contains(s) ||
                         (r.ServiceType ?? "").ToLowerInvariant().Contains(s));
                 }
 
@@ -302,15 +303,15 @@ namespace AccordionGridProject
                     bool desc = string.Equals(sortDir, "desc",
                                               StringComparison.OrdinalIgnoreCase);
                     if (sortKey == "Description")
-                        all = desc ? all.OrderByDescending(r => r.Description) : all.OrderBy(r => r.Description);
+                        all = desc ? all.OrderByDescending(r => r.Description)      : all.OrderBy(r => r.Description);
                     else if (sortKey == "State")
-                        all = desc ? all.OrderByDescending(r => r.State) : all.OrderBy(r => r.State);
+                        all = desc ? all.OrderByDescending(r => r.State)             : all.OrderBy(r => r.State);
                     else if (sortKey == "ExtractionStatus")
-                        all = desc ? all.OrderByDescending(r => r.ExtractionStatus) : all.OrderBy(r => r.ExtractionStatus);
+                        all = desc ? all.OrderByDescending(r => r.ExtractionStatus)  : all.OrderBy(r => r.ExtractionStatus);
                     else if (sortKey == "MappingStatus")
-                        all = desc ? all.OrderByDescending(r => r.MappingStatus) : all.OrderBy(r => r.MappingStatus);
+                        all = desc ? all.OrderByDescending(r => r.MappingStatus)     : all.OrderBy(r => r.MappingStatus);
                     else if (sortKey == "LastUpdated")
-                        all = desc ? all.OrderByDescending(r => r.LastUpdated) : all.OrderBy(r => r.LastUpdated);
+                        all = desc ? all.OrderByDescending(r => r.LastUpdated)       : all.OrderBy(r => r.LastUpdated);
                     else
                         all = all.OrderBy(r => r.Id);
                 }
@@ -348,25 +349,25 @@ namespace AccordionGridProject
         // ─────────────────────────────────────────────────────────────────────
         public class PoaFormModel
         {
-            public int Id { get; set; }
-            public string Description { get; set; }
-            public string State { get; set; }
-            public bool Active { get; set; }
-            public int? MailCenterId { get; set; }
-            public string ServiceType { get; set; }
-            public string FormType { get; set; }
-            public string FormUse { get; set; }
-            public string PoaType { get; set; }
-            public string SignatureType { get; set; }
-            public string OnlineRequirement { get; set; }
-            public string ReturnType { get; set; }
-            public string ExtractionStatus { get; set; }
-            public string MappingStatus { get; set; }
-            public string DocumentReference { get; set; }
-            public string FileName { get; set; }
-            public string FileExtension { get; set; }
-            public string Notes { get; set; }
-            public DateTime? LastUpdated { get; set; }
+            public int       Id                { get; set; }
+            public string    Description       { get; set; }
+            public string    State             { get; set; }
+            public bool      Active            { get; set; }
+            public int?      MailCenterId      { get; set; }
+            public string    ServiceType       { get; set; }
+            public string    FormType          { get; set; }
+            public string    FormUse           { get; set; }
+            public string    PoaType           { get; set; }
+            public string    SignatureType     { get; set; }
+            public string    OnlineRequirement { get; set; }
+            public string    ReturnType        { get; set; }
+            public string    ExtractionStatus  { get; set; }
+            public string    MappingStatus     { get; set; }
+            public string    DocumentReference { get; set; }
+            public string    FileName          { get; set; }
+            public string    FileExtension     { get; set; }
+            public string    Notes             { get; set; }
+            public DateTime? LastUpdated       { get; set; }
         }
     }
 }

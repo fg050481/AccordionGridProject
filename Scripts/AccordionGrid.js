@@ -745,27 +745,27 @@
         showDelete: false,
         showCancel: true,
         // Callbacks
-        onLoad: null,
-        onRowExpand: null,
-        onRowCollapse: null,
-        onSave: null,
-        onDelete: null,
-        onActionClick: null,
-        onAddNew: null,
-        onPageChange: null,
-        onSearch: null,
-        onSort: null,
+        onLoad:         null,
+        onRowExpand:    null,
+        onRowCollapse:  null,
+        onSave:         null,
+        onDelete:       null,
+        onActionClick:  null,
+        onAddNew:       null,
+        onPageChange:   null,
+        onSearch:       null,
+        onSort:         null,
         onFilterChange: null,
         // PDF / blob upload (called before insert when a file is attached)
         // signature: function(file, progressCallback, done)
         //   progressCallback(pct)  — 0-100, optional
         //   done(err, guidReference) — null err on success
-        onUploadDocument: null,
+        onUploadDocument:   null,
         uploadDocumentField: 'DocumentReference', // key to store the returned GUID in
-        uploadMaxSizeMb: 20,                  // max file size in MB (default 20)
+        uploadMaxSizeMb:     20,                  // max file size in MB (default 20)
         uploadAllowedExtensions: ['.pdf'],        // array of lowercase dot-extensions
         // For server-side: supply this to override client fetch
-        dataLoader: null,    // function(params, callback) — async data source
+        dataLoader:     null,    // function(params, callback) — async data source
     };
 
     /*
@@ -813,23 +813,23 @@
     function AccordionGrid(containerId, options) {
         this._containerId = containerId;
         this._config = this._mergeConfig(options || {});
-        this._allData = [];
-        this._filtered = [];
-        this._page = 1;
-        this._pageSize = this._config.pageSize;
-        this._sortKey = null;
-        this._sortDir = 'asc';
+        this._allData   = [];
+        this._filtered  = [];
+        this._page      = 1;
+        this._pageSize  = this._config.pageSize;
+        this._sortKey   = null;
+        this._sortDir   = 'asc';
         this._searchVal = '';
         this._filterVal = '';
-        this._expanded = {};   // rowId -> bool
+        this._expanded  = {};   // rowId -> bool
         this._addPanelOpen = false;
-        this._editBuffer = {};  // rowId -> draft record
-        this._editMode = {};  // rowId -> bool (false=view-only, true=editing)
-        this._uploadState = {};  // 'new' or rowId -> {file, guid, uploading, progress, error}
-        this._newBuffer = {};
-        this._uid = 'ag_' + Math.random().toString(36).slice(2, 9);
-        this._container = null;
-        this._idCounter = 0;
+        this._editBuffer   = {};  // rowId -> draft record
+        this._editMode     = {};  // rowId -> bool (false=view-only, true=editing)
+        this._uploadState  = {};  // 'new' or rowId -> {file, guid, uploading, progress, error}
+        this._newBuffer    = {};
+        this._uid          = 'ag_' + Math.random().toString(36).slice(2, 9);
+        this._container    = null;
+        this._idCounter    = 0;
         injectCSS();
         this._render();
     }
@@ -853,9 +853,9 @@
                 }
             }
             // Restore functions that were wiped by deepClone
-            var fns = ['onLoad', 'onRowExpand', 'onRowCollapse', 'onSave', 'onDelete',
-                'onActionClick', 'onAddNew', 'onPageChange', 'onSearch',
-                'onSort', 'onFilterChange', 'onRefresh', 'dataLoader'];
+            var fns = ['onLoad','onRowExpand','onRowCollapse','onSave','onDelete',
+                       'onActionClick','onAddNew','onPageChange','onSearch',
+                       'onSort','onFilterChange','onRefresh','dataLoader'];
             fns.forEach(function (fn) {
                 if (typeof opts[fn] === 'function') cfg[fn] = opts[fn];
             });
@@ -867,7 +867,7 @@
             }
             if (Array.isArray(opts.editFields)) {
                 opts.editFields.forEach(function (f, i) {
-                    if (typeof f.render === 'function') cfg.editFields[i].render = f.render;
+                    if (typeof f.render   === 'function') cfg.editFields[i].render   = f.render;
                     if (typeof f.onChange === 'function') cfg.editFields[i].onChange = f.onChange;
                 });
             }
@@ -887,8 +887,8 @@
             data.forEach(function (r) {
                 if (r._agId == null) r._agId = ++self._idCounter;
             });
-            this._allData = data;
-            this._page = 1;
+            this._allData  = data;
+            this._page     = 1;
             this._expanded = {};
             this._apply();
             this._fire('onLoad', { data: data });
@@ -905,13 +905,13 @@
         // Call this for a full "reset to initial state" refresh.
         resetState: function () {
             // ── Internal state ─────────────────────────────────────────────
-            this._page = 1;
+            this._page      = 1;
             this._searchVal = '';
             this._filterVal = '';
-            this._sortKey = null;
-            this._sortDir = 'asc';
-            this._expanded = {};
-            this._editMode = {};
+            this._sortKey   = null;
+            this._sortDir   = 'asc';
+            this._expanded  = {};
+            this._editMode  = {};
 
             // ── DOM: search input ──────────────────────────────────────────
             var searchEl = document.getElementById(this._uid + '_search');
@@ -1010,12 +1010,12 @@
 
         _buildParams: function () {
             return {
-                page: this._page,
-                pageSize: this._pageSize,
-                search: this._searchVal,
-                filter: this._filterVal,
-                sortKey: this._sortKey,
-                sortDir: this._sortDir,
+                page:      this._page,
+                pageSize:  this._pageSize,
+                search:    this._searchVal,
+                filter:    this._filterVal,
+                sortKey:   this._sortKey,
+                sortDir:   this._sortDir,
             };
         },
 
@@ -1035,7 +1035,7 @@
                     data.forEach(function (r) {
                         if (r._agId == null) r._agId = ++self._idCounter;
                     });
-                    self._allData = data;
+                    self._allData  = data;
                     self._filtered = data; // local slice — pager uses _serverTotalCount
                     self._renderTitle();
                     self._renderBody();
@@ -1128,7 +1128,7 @@
         _setEditMode: function (id) {
             this._editMode[id] = true;
             var wrap = document.querySelector('[data-agid="' + id + '"].ag-row-wrap');
-            var dp = wrap && wrap.querySelector('.ag-detail-panel');
+            var dp   = wrap && wrap.querySelector('.ag-detail-panel');
             if (!dp) return;
             var rec = this._findById(id);
             if (!this._editBuffer[id]) this._editBuffer[id] = deepClone(rec);
@@ -1183,9 +1183,9 @@
 
             // Refresh button (optional) — right of title, left of Add button.
             if (this._config.showRefreshButton) {
-                var self1 = this;
-                var refBtn = document.createElement('button');
-                refBtn.id = this._uid + '_refresh';
+                var self1   = this;
+                var refBtn  = document.createElement('button');
+                refBtn.id   = this._uid + '_refresh';
                 refBtn.className = 'ag-refresh-btn';
                 refBtn.setAttribute('type', 'button');
                 refBtn.setAttribute('aria-label', 'Refresh');
@@ -1256,7 +1256,7 @@
             // Server-side mode: show the true total from the server.
             // Client-side mode: show the filtered local count.
             var count = (typeof this._config.dataLoader === 'function' &&
-                typeof this._serverTotalCount === 'number')
+                         typeof this._serverTotalCount === 'number')
                 ? this._serverTotalCount
                 : (this._filtered.length || this._allData.length);
             var label = this._config.title;
@@ -1469,8 +1469,8 @@
         },
 
         _buildDetailPanel: function (record) {
-            var cfg = this._config;
-            var buf = this._editBuffer[record._agId] || deepClone(record);
+            var cfg     = this._config;
+            var buf     = this._editBuffer[record._agId] || deepClone(record);
             var viewOnly = !this._editMode[record._agId]; // true = read-only view
 
             if (cfg.expandMode === 'quickview') {
@@ -1561,8 +1561,8 @@
         },
 
         _buildAddPanel: function () {
-            var cfg = this._config;
-            var buf = this._newBuffer;
+            var cfg  = this._config;
+            var buf  = this._newBuffer;
             var upst = this._uploadState['new'] || {};
             var html = '<div class="ag-add-panel-title">' + this._svgPlus() +
                 'Add New ' + escapeHtml(cfg.title.replace(/s$/, '')) + '</div>';
@@ -1594,10 +1594,10 @@
 
             html += '<div class="ag-form-actions">';
             if (cfg.showInsert) {
-                var hasFn = typeof cfg.onUploadDocument === 'function';
-                var hasGuid = hasFn && upst && upst.guid && upst.guid.length > 0;
+                var hasFn     = typeof cfg.onUploadDocument === 'function';
+                var hasGuid   = hasFn && upst && upst.guid && upst.guid.length > 0;
                 var isBlocked = hasFn && !hasGuid;
-                var btnLabel = upst.uploading ? 'Uploading…' : 'Save New Template';
+                var btnLabel  = upst.uploading ? 'Uploading…' : 'Save New Template';
                 var blockedStyle = isBlocked
                     ? 'opacity:.45;cursor:not-allowed;'
                     : '';
@@ -1685,14 +1685,14 @@
                     var file = filePicker.files[0];
                     if (!file) return;
                     var stKey = (id === 'new') ? 'new' : id;
-                    var cfg = self._config;
+                    var cfg   = self._config;
 
                     // ── Resolve allowed extensions from config ─────────────────
                     // Always lowercase, always starts with a dot.
                     var allowed = Array.isArray(cfg.uploadAllowedExtensions) && cfg.uploadAllowedExtensions.length
                         ? cfg.uploadAllowedExtensions.map(function (e) {
                             return (e.charAt(0) === '.' ? e : '.' + e).toLowerCase();
-                        })
+                          })
                         : ['.pdf'];
 
                     // ── Validate extension (real-time, before any upload) ──────
@@ -1706,18 +1706,18 @@
                     // If the MIME is present AND mismatched we reject; if absent
                     // (some OSes omit it) we rely on the extension check alone.
                     var mimeMap = {
-                        '.pdf': ['application/pdf'],
-                        '.doc': ['application/msword'],
+                        '.pdf':  ['application/pdf'],
+                        '.doc':  ['application/msword'],
                         '.docx': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
-                        '.xls': ['application/vnd.ms-excel'],
+                        '.xls':  ['application/vnd.ms-excel'],
                         '.xlsx': ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
-                        '.png': ['image/png'],
-                        '.jpg': ['image/jpeg'],
+                        '.png':  ['image/png'],
+                        '.jpg':  ['image/jpeg'],
                         '.jpeg': ['image/jpeg'],
-                        '.gif': ['image/gif'],
-                        '.txt': ['text/plain'],
-                        '.csv': ['text/csv', 'text/plain'],
-                        '.zip': ['application/zip', 'application/x-zip-compressed'],
+                        '.gif':  ['image/gif'],
+                        '.txt':  ['text/plain'],
+                        '.csv':  ['text/csv','text/plain'],
+                        '.zip':  ['application/zip','application/x-zip-compressed'],
                     };
                     var expectedMimes = mimeMap[fileExt];
                     var mimeOk = true;
@@ -1737,7 +1737,7 @@
                     }
 
                     // ── Validate size ──────────────────────────────────────────
-                    var maxMb = (typeof cfg.uploadMaxSizeMb === 'number' && cfg.uploadMaxSizeMb > 0)
+                    var maxMb    = (typeof cfg.uploadMaxSizeMb === 'number' && cfg.uploadMaxSizeMb > 0)
                         ? cfg.uploadMaxSizeMb : 20;
                     var maxBytes = maxMb * 1024 * 1024;
                     if (file.size > maxBytes) {
@@ -1763,7 +1763,7 @@
             if (uploadBtn) {
                 uploadBtn.addEventListener('click', function () {
                     var stKey = (id === 'new') ? 'new' : id;
-                    var upst = self._uploadState[stKey];
+                    var upst  = self._uploadState[stKey];
                     if (!upst || !upst.file) return;
                     if (upst.uploading) return;
                     self._doUpload(panel, stKey, upst.file, null);
@@ -1796,8 +1796,8 @@
             panel.querySelectorAll('[data-formaction]').forEach(function (btn) {
                 btn.addEventListener('click', function () {
                     var action = btn.getAttribute('data-formaction');
-                    var agid = btn.getAttribute('data-agid');
-                    var numId = parseInt(agid, 10);
+                    var agid   = btn.getAttribute('data-agid');
+                    var numId  = parseInt(agid, 10);
 
                     // ── Cancel / Close ─────────────────────────────────────────
                     if (action === 'cancel' || action === 'cancel-add') {
@@ -1839,8 +1839,8 @@
                     // ── Insert (add new) — async: upload PDF first if needed ───
                     if (action === 'insert') {
                         self._collectFormValues(panel, self._newBuffer);
-                        var cfg = self._config;
-                        var upst = self._uploadState['new'];
+                        var cfg   = self._config;
+                        var upst  = self._uploadState['new'];
                         var hasFn = typeof cfg.onUploadDocument === 'function';
 
                         // ── HARD GATE: upload is required and no guid yet ───────
@@ -1894,7 +1894,20 @@
 
         // Finish an insert after any upload is complete
         _finaliseInsert: function (panel) {
-            var self = this;
+            var self   = this;
+            var cfg    = this._config;
+            var upst   = this._uploadState['new'] || {};
+
+            // Re-apply upload values into _newBuffer AFTER _collectFormValues
+            // has run (which may have overwritten them with the empty readonly
+            // input values).  The source of truth is _uploadState, not the DOM.
+            if (upst.guid) {
+                this._newBuffer[cfg.uploadDocumentField] = upst.guid;
+            }
+            if (upst.file && upst.file.name) {
+                this._newBuffer['FileName'] = upst.file.name;
+            }
+
             var newRec = Object.assign({}, this._newBuffer);
             this.addRecord(newRec);
             this._addPanelOpen = false;
@@ -1908,11 +1921,11 @@
         // Perform the blob upload and update the widget UI as it progresses
         _doUpload: function (panel, stKey, file, onDone) {
             var self = this;
-            var cfg = this._config;
+            var cfg  = this._config;
             var upst = this._uploadState[stKey] || {};
             upst.uploading = true;
-            upst.progress = 0;
-            upst.error = null;
+            upst.progress  = 0;
+            upst.error     = null;
             this._uploadState[stKey] = upst;
             this._refreshUploadWidget(panel, stKey);
 
@@ -1932,16 +1945,25 @@
                     upst.uploading = false;
                     if (err) {
                         upst.error = err;
-                        upst.guid = null;
+                        upst.guid  = null;
                     } else {
-                        upst.guid = guid;
+                        upst.guid  = guid;
                         upst.error = null;
-                        // Store GUID into the buffer immediately
+                        // Store GUID, FileName and FileExtension into the buffer
+                        // immediately so _finaliseInsert can include them even
+                        // if _collectFormValues overwrites the readonly inputs.
                         self._newBuffer[cfg.uploadDocumentField] = guid;
+                        if (file && file.name) {
+                            self._newBuffer['FileName'] = file.name;
+                            var dotIdx = file.name.lastIndexOf('.');
+                            self._newBuffer['FileExtension'] = dotIdx !== -1
+                                ? file.name.slice(dotIdx).toLowerCase()
+                                : '';
+                        }
                     }
                     self._refreshUploadWidget(panel, stKey);
                     if (saveBtn) {
-                        saveBtn.disabled = false;
+                        saveBtn.disabled    = false;
                         saveBtn.textContent = 'Save New Template';
                     }
                     if (!err && typeof onDone === 'function') onDone(guid);
@@ -1951,13 +1973,13 @@
 
         // Re-paint only the upload widget area without rebuilding the whole panel
         _refreshUploadWidget: function (panel, stKey) {
-            var upst = this._uploadState[stKey] || {};
-            var widget = panel.querySelector('.ag-pdf-upload-widget');
+            var upst    = this._uploadState[stKey] || {};
+            var widget  = panel.querySelector('.ag-pdf-upload-widget');
             if (!widget) return;
             widget.innerHTML = buildPdfUploadWidgetInner(upst, this._config);
             // Re-bind the new Upload button if present
-            var self = this;
-            var newBtn = widget.querySelector('.ag-pdf-upload-btn');
+            var self    = this;
+            var newBtn  = widget.querySelector('.ag-pdf-upload-btn');
             if (newBtn) {
                 newBtn.addEventListener('click', function () {
                     var us = self._uploadState[stKey];
@@ -1972,19 +1994,19 @@
             // reflects whether a valid guid is in hand.
             var saveBtn = panel.querySelector('[data-formaction="insert"]');
             if (!saveBtn) return;
-            var hasFn = typeof this._config.onUploadDocument === 'function';
+            var hasFn   = typeof this._config.onUploadDocument === 'function';
             var hasGuid = hasFn && upst.guid && upst.guid.length > 0;
             if (hasFn) {
                 if (hasGuid) {
                     // ✓ Upload complete — unlock
                     saveBtn.style.opacity = '1';
-                    saveBtn.style.cursor = 'pointer';
+                    saveBtn.style.cursor  = 'pointer';
                     saveBtn.removeAttribute('title');
-                    saveBtn.textContent = 'Save New Template';
+                    saveBtn.textContent   = 'Save New Template';
                 } else {
                     // ✗ No guid yet — keep locked
                     saveBtn.style.opacity = '0.45';
-                    saveBtn.style.cursor = 'not-allowed';
+                    saveBtn.style.cursor  = 'not-allowed';
                     saveBtn.title = 'Upload a document first to enable saving';
                     if (!upst.uploading) saveBtn.textContent = 'Save New Template';
                 }
@@ -2003,14 +2025,14 @@
         _renderPager: function () {
             var el = document.getElementById(this._uid + '_pager');
             if (!el) return;
-            var self = this;
+            var self  = this;
             var isServerMode = typeof this._config.dataLoader === 'function' &&
-                typeof this._serverTotalCount === 'number';
+                               typeof this._serverTotalCount === 'number';
             var total = isServerMode ? this._serverTotalCount : this._filtered.length;
-            var tp = this._totalPages();
-            var p = this._page;
+            var tp    = this._totalPages();
+            var p     = this._page;
             var start = ((p - 1) * this._pageSize) + 1;
-            var end = Math.min(p * this._pageSize, total);
+            var end   = Math.min(p * this._pageSize, total);
 
             var pageSizeOpts = this._config.pageSizeOptions.map(function (n) {
                 return '<option value="' + n + '"' + (n === self._pageSize ? ' selected' : '') + '>' + n + ' / page</option>';
@@ -2198,16 +2220,16 @@
         var allowed = Array.isArray(cfg.uploadAllowedExtensions) && cfg.uploadAllowedExtensions.length
             ? cfg.uploadAllowedExtensions.map(function (e) {
                 return (e.charAt(0) === '.' ? e : '.' + e).toLowerCase();
-            })
+              })
             : ['.pdf'];
-        var maxMb = (typeof cfg.uploadMaxSizeMb === 'number' && cfg.uploadMaxSizeMb > 0)
+        var maxMb   = (typeof cfg.uploadMaxSizeMb === 'number' && cfg.uploadMaxSizeMb > 0)
             ? cfg.uploadMaxSizeMb : 20;
 
         // accept= value: comma-separated extensions
         var acceptAttr = allowed.join(',');
         // Human-readable label: "Choose PDF" / "Choose PDF, DOCX" / "Choose File"
-        var extLabels = allowed.map(function (e) { return e.replace('.', '').toUpperCase(); });
-        var chooseLbl = 'Choose ' + (extLabels.length <= 3 ? extLabels.join(', ') : 'File');
+        var extLabels  = allowed.map(function (e) { return e.replace('.', '').toUpperCase(); });
+        var chooseLbl  = 'Choose ' + (extLabels.length <= 3 ? extLabels.join(', ') : 'File');
 
         return '<div class="ag-field ag-field-full" style="grid-column:1/-1;">' +
             '<label class="ag-field-label">Document</label>' +
@@ -2236,7 +2258,7 @@
             allowed = Array.isArray(cfg.uploadAllowedExtensions) && cfg.uploadAllowedExtensions.length
                 ? cfg.uploadAllowedExtensions.map(function (e) {
                     return (e.charAt(0) === '.' ? e : '.' + e).toLowerCase();
-                })
+                  })
                 : ['.pdf'];
         }
         if (!maxMb) {
@@ -2244,7 +2266,7 @@
                 ? cfg.uploadMaxSizeMb : 20;
         }
         var extLabels = allowed.map(function (e) { return e.replace('.', '').toUpperCase(); });
-        var hintText = extLabels.join(', ') + ' only — max ' + maxMb + ' MB.';
+        var hintText  = extLabels.join(', ') + ' only — max ' + maxMb + ' MB.';
 
         // No file selected yet
         if (!upst || !upst.file) {
