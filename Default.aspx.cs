@@ -11,7 +11,7 @@ namespace AccordionGridProject
 {
     public partial class Default : System.Web.UI.Page
     {
-       protected void Page_Load(object sender, EventArgs e)
+        protected void Page_Load(object sender, EventArgs e)
         {
             if (!IsPostBack)
                 LoadFirstPage();
@@ -27,21 +27,21 @@ namespace AccordionGridProject
             int totalCount;
             var data = FakePoaFormsService.GetAllForms(
                 itemsPerPage: firstPageSize,
-                pageNumber:   1,
-                totalCount:   out totalCount);
+                pageNumber: 1,
+                totalCount: out totalCount);
 
             var payload = new
             {
-                items      = FlattenRecords(data),
+                items = FlattenRecords(data),
                 totalCount = totalCount,
-                pageSize   = firstPageSize,
-                page       = 1
+                pageSize = firstPageSize,
+                page = 1
             };
 
             var json = JsonConvert.SerializeObject(payload, new JsonSerializerSettings
             {
                 StringEscapeHandling = StringEscapeHandling.EscapeHtml,
-                NullValueHandling    = NullValueHandling.Include
+                NullValueHandling = NullValueHandling.Include
             });
 
             HiddenGridData.Value = json;
@@ -49,6 +49,43 @@ namespace AccordionGridProject
                 GetType(), "poaInitialData",
                 "window.poaInitialData = " + json + ";",
                 addScriptTags: true);
+
+            // ── Lookups (combo box options) ───────────────────────────────────
+            // Maps each LookupItem { Id, Name } → { value, label } so the grid
+            // combo boxes consume them directly.  In real code this calls
+            // PoaFormsService.GetServiceTypes(), GetMailCenters(), etc.
+            var lookups = new
+            {
+                serviceTypes = ToOptions(FakePoaFormsService.GetServiceTypes()),
+                poaFormTypes = ToOptions(FakePoaFormsService.GetPoaFormTypes()),
+                formUses = ToOptions(FakePoaFormsService.GetFormUses()),
+                poaTypes = ToOptions(FakePoaFormsService.GetPoaTypes()),
+                signatureTypes = ToOptions(FakePoaFormsService.GetSignatureTypes()),
+                onlineRequirements = ToOptions(FakePoaFormsService.GetOnlineRequirements()),
+                returnTypes = ToOptions(FakePoaFormsService.GetReturnTypes()),
+                mailCenters = ToOptions(FakePoaFormsService.GetMailCenters()),
+                // GetStates() returns code as Id + state name; we use the code
+                // as the value (shown in the grid column + used as filter).
+                states = FakePoaFormsService.GetStates()
+                                        .Select(s => new { label = s.Id, value = s.Id })
+                                        .ToList()
+            };
+
+            var lookupsJson = JsonConvert.SerializeObject(lookups, new JsonSerializerSettings
+            {
+                StringEscapeHandling = StringEscapeHandling.EscapeHtml
+            });
+
+            ClientScript.RegisterStartupScript(
+                GetType(), "poaLookups",
+                "window.poaLookups = " + lookupsJson + ";",
+                addScriptTags: true);
+        }
+
+        // Maps service LookupItem { Id, Name } → grid option { value, label }
+        private static List<object> ToOptions(IEnumerable<LookupItem> items)
+        {
+            return items.Select(i => (object)new { value = i.Id, label = i.Name }).ToList();
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -60,23 +97,23 @@ namespace AccordionGridProject
                                      string search, string filter,
                                      string sortKey, string sortDir)
         {
-            if (page     <= 0) page     = 1;
+            if (page <= 0) page = 1;
             if (pageSize <= 0) pageSize = 10;
             if (pageSize > 100) pageSize = 100;
 
             int totalCount;
             var data = FakePoaFormsService.GetAllForms(
                 itemsPerPage: pageSize,
-                pageNumber:   page,
-                totalCount:   out totalCount,
-                search:       search,
-                filterState:  filter,
-                sortKey:      sortKey,
-                sortDir:      sortDir);
+                pageNumber: page,
+                totalCount: out totalCount,
+                search: search,
+                filterState: filter,
+                sortKey: sortKey,
+                sortDir: sortDir);
 
             return JsonConvert.SerializeObject(new
             {
-                items      = FlattenRecords(data),
+                items = FlattenRecords(data),
                 totalCount = totalCount
             });
         }
@@ -94,20 +131,52 @@ namespace AccordionGridProject
         //   return new { Id = newId,
         //                LastUpdated = model.LastUpdated.Value.ToString("MM/dd/yyyy hh:mm tt") };
         // ─────────────────────────────────────────────────────────────────────
+        // INSERT FORM
+        // The DTO now carries foreign-key IDs directly from the combo boxes
+        // (ServiceTypeId, FormTypeId, …) so no string→id lookup is needed.
+        // State arrives as the abbreviation and is resolved to StateId here.
+        //
+        // REAL IMPLEMENTATION:
+        //   var entity = new poa_forms
+        //   {
+        //       description       = form.Description,
+        //       active            = form.Active,
+        //       mail_center_id    = form.MailCenterId,
+        //       service_type_id   = form.ServiceTypeId,        // ← direct FK
+        //       form_type_id      = form.FormTypeId,
+        //       form_use_id       = form.FormUseId,
+        //       poa_type_id       = form.PoaTypeId,
+        //       signature_type_id = form.SignatureTypeId,
+        //       return_type_id    = form.ReturnTypeId,
+        //       online_requirement_id = form.OnlineRequirementId,
+        //       state_id          = _context.state_codes
+        //                              .Where(s => s.abbreviation == form.State)
+        //                              .Select(s => (int?)s.id).FirstOrDefault(),
+        //       document_reference = form.DocumentReference,
+        //       file_name          = form.FileName,
+        //       file_extension     = form.FileExtension,
+        //       last_updated       = DateTime.UtcNow
+        //   };
+        //   _context.poa_forms.Add(entity);
+        //   _context.SaveChanges();
+        //   return new { Id = entity.id,
+        //                LastUpdated = entity.last_updated.Value.ToString("MM/dd/yyyy hh:mm tt") };
+        // ─────────────────────────────────────────────────────────────────────
         [WebMethod]
         public static string InsertForm(PoaFormDto form)
         {
             // ── POC stub ────────────────────────────────────────────────────
-            var newId       = new Random().Next(100, 9999);
+            var newId = new Random().Next(100, 9999);
             var lastUpdated = DateTime.Now.ToString("MM/dd/yyyy hh:mm tt");
 
             System.Diagnostics.Trace.TraceInformation(
-                "[InsertForm] Simulated insert — description={0}, newId={1}",
-                form.Description, newId);
+                "[InsertForm] Simulated insert — description={0}, serviceTypeId={1}, " +
+                "formTypeId={2}, state={3}, newId={4}",
+                form.Description, form.ServiceTypeId, form.PoaFormTypeId, form.State, newId);
 
             return JsonConvert.SerializeObject(new
             {
-                Id          = newId,
+                Id = newId,
                 LastUpdated = lastUpdated
             });
         }
@@ -171,7 +240,7 @@ namespace AccordionGridProject
 
             return JsonConvert.SerializeObject(new
             {
-                JobId  = fakeJobId,
+                JobId = fakeJobId,
                 Status = "In Progress"
             });
         }
@@ -195,7 +264,7 @@ namespace AccordionGridProject
 
             return JsonConvert.SerializeObject(new
             {
-                Status      = "Partial",
+                Status = "Partial",
                 RedirectUrl = (string)null
             });
         }
@@ -209,7 +278,7 @@ namespace AccordionGridProject
 
             return JsonConvert.SerializeObject(new
             {
-                Success     = true,
+                Success = true,
                 RedirectUrl = (string)null
             });
         }
@@ -224,16 +293,20 @@ namespace AccordionGridProject
             {
                 x.Id,
                 x.Description,
-                x.State,
+                x.State,            // abbreviation (column + filter + select value)
                 x.Active,
                 x.MailCenterId,
-                x.ServiceType,
-                x.FormType,
-                x.FormUse,
-                x.PoaType,
-                x.SignatureType,
-                x.OnlineRequirement,
-                x.ReturnType,
+
+                // Select fields emit the FK id as the value so the edit-form
+                // dropdowns pre-select the correct option (option.value == id).
+                ServiceType = x.ServiceTypeId,
+                PoaFormType = x.PoaFormTypeId,
+                FormUse = x.FormUseId,
+                PoaType = x.PoaTypeId,
+                SignatureType = x.SignatureTypeId,
+                ReturnType = x.ReturnTypeId,
+                OnlineRequirement = x.OnlineRequirementId,
+
                 x.ExtractionStatus,
                 x.MappingStatus,
                 x.DocumentReference,
@@ -252,37 +325,129 @@ namespace AccordionGridProject
         // ─────────────────────────────────────────────────────────────────────
         public class PoaFormDto
         {
-            public int    Id                { get; set; }
-            public string Description       { get; set; }
-            public string State             { get; set; }
-            public bool   Active            { get; set; }
-            public int?   MailCenterId      { get; set; }
-            public string ServiceType       { get; set; }
-            public string FormType          { get; set; }
-            public string FormUse           { get; set; }
-            public string PoaType           { get; set; }
-            public string SignatureType     { get; set; }
-            public string OnlineRequirement { get; set; }
-            public string ReturnType        { get; set; }
+            public int Id { get; set; }
+            public string Description { get; set; }
+            public string State { get; set; }   // abbreviation → StateId on server
+            public bool Active { get; set; }
+            public int? MailCenterId { get; set; }
+
+            // Foreign-key IDs sent directly from the combo boxes.
+            public int? ServiceTypeId { get; set; }
+            public int? PoaFormTypeId { get; set; }
+            public int? FormUseId { get; set; }
+            public int? PoaTypeId { get; set; }
+            public int? SignatureTypeId { get; set; }
+            public int? ReturnTypeId { get; set; }
+            public int? OnlineRequirementId { get; set; }
+
             public string DocumentReference { get; set; }
-            public string FileName          { get; set; }
-            public string FileExtension     { get; set; }
-            public string Notes             { get; set; }
+            public string FileName { get; set; }
+            public string FileExtension { get; set; }
+            public string Notes { get; set; }
         }
 
         // ─────────────────────────────────────────────────────────────────────
         // FAKE SERVICE — delete when wiring the real IPoaFormsService.
+        //
+        // The lookup methods below mirror the real PoaFormsService signatures
+        // exactly, so swapping to the real service is a 1-line change per call:
+        //
+        //   FakePoaFormsService.GetServiceTypes()  →  PoaFormsService.GetServiceTypes()
+        //
+        // Real service (from your repository) returns:
+        //   GetServiceTypes()       → service_type            (service_type_id / _description)
+        //   GetFormUses()           → poa_form_uses           (poa_form_use_id / _description)
+        //   GetPoaTypes()           → poa_types               (poa_type_id / _description)
+        //   GetSignatureTypes()     → poa_signature_types     (poa_signature_type_id / _description)
+        //   GetOnlineRequirements() → poa_online_requirements (poa_online_requirement_id / _description)
+        //   GetReturnTypes()        → poa_return_types        (poa_return_type_id / _description)
+        //   GetStates()             → state_codes             (code / state)
+        //   GetPoaFormTypes()       → poa_form_types          (poa_form_type_id / _description)
+        //   GetMailCenters()        → mail_centers            (mail_center_id / _description)
         // ─────────────────────────────────────────────────────────────────────
         private static class FakePoaFormsService
         {
+            // ── Lookup methods (combo box sources) ─────────────────────────────
+            public static IEnumerable<LookupItem> GetServiceTypes() => new[]
+            {
+                new LookupItem { Id = 1, Name = "Full" },
+                new LookupItem { Id = 2, Name = "Partial" },
+                new LookupItem { Id = 3, Name = "Limited" }
+            };
+
+            public static IEnumerable<LookupItem> GetPoaFormTypes() => new[]
+            {
+                new LookupItem { Id = 1, Name = "POA" },
+                new LookupItem { Id = 2, Name = "2848" },
+                new LookupItem { Id = 3, Name = "8821" }
+            };
+
+            public static IEnumerable<LookupItem> GetFormUses() => new[]
+            {
+                new LookupItem { Id = 1, Name = "Filing" },
+                new LookupItem { Id = 2, Name = "Representation" },
+                new LookupItem { Id = 3, Name = "Both" }
+            };
+
+            public static IEnumerable<LookupItem> GetPoaTypes() => new[]
+            {
+                new LookupItem { Id = 1, Name = "Tax" },
+                new LookupItem { Id = 2, Name = "Financial" },
+                new LookupItem { Id = 3, Name = "Medical" }
+            };
+
+            public static IEnumerable<LookupItem> GetSignatureTypes() => new[]
+            {
+                new LookupItem { Id = 1, Name = "Digital" },
+                new LookupItem { Id = 2, Name = "Electronic" },
+                new LookupItem { Id = 3, Name = "Wet" }
+            };
+
+            public static IEnumerable<LookupItem> GetOnlineRequirements() => new[]
+            {
+                new LookupItem { Id = 1, Name = "None" },
+                new LookupItem { Id = 2, Name = "Required" },
+                new LookupItem { Id = 3, Name = "Optional" }
+            };
+
+            public static IEnumerable<LookupItem> GetReturnTypes() => new[]
+            {
+                new LookupItem { Id = 1, Name = "Mail" },
+                new LookupItem { Id = 2, Name = "Fax" },
+                new LookupItem { Id = 3, Name = "E-File" },
+                new LookupItem { Id = 4, Name = "Portal" }
+            };
+
+            public static IEnumerable<LookupItem> GetMailCenters() => new[]
+            {
+                new LookupItem { Id = 3,  Name = "Mail Center 3" },
+                new LookupItem { Id = 5,  Name = "Mail Center 5" },
+                new LookupItem { Id = 6,  Name = "Mail Center 6" },
+                new LookupItem { Id = 7,  Name = "Mail Center 7" },
+                new LookupItem { Id = 8,  Name = "Mail Center 8" },
+                new LookupItem { Id = 9,  Name = "Mail Center 9" },
+                new LookupItem { Id = 10, Name = "Mail Center 10" },
+                new LookupItem { Id = 11, Name = "Mail Center 11" },
+                new LookupItem { Id = 12, Name = "Mail Center 12" }
+            };
+
+            // GetStates returns the state code as Id and the state name as Name.
+            public static IEnumerable<LookupItem> GetStates()
+            {
+                var codes = "AL,AK,AZ,AR,CA,CO,CT,DE,FL,GA,HI,ID,IL,IN,IA,KS,KY,LA,ME,MD,MA,MI,MN,MS,MO,MT,NE,NV,NH,NJ,NM,NY,NC,ND,OH,OK,OR,PA,RI,SC,SD,TN,TX,UT,VT,VA,WA,WV,WI,WY"
+                            .Split(',');
+                return codes.Select(c => new LookupItem { Id = c, Name = c }).ToList();
+            }
+
+            // ── Grid data ──────────────────────────────────────────────────────
             public static List<PoaFormModel> GetAllForms(
-                int    itemsPerPage,
-                int    pageNumber,
+                int itemsPerPage,
+                int pageNumber,
                 out int totalCount,
-                string search      = null,
+                string search = null,
                 string filterState = null,
-                string sortKey     = null,
-                string sortDir     = null)
+                string sortKey = null,
+                string sortDir = null)
             {
                 var all = GetSeedData().AsEnumerable();
 
@@ -291,7 +456,7 @@ namespace AccordionGridProject
                     var s = search.ToLowerInvariant();
                     all = all.Where(r =>
                         (r.Description ?? "").ToLowerInvariant().Contains(s) ||
-                        (r.State       ?? "").ToLowerInvariant().Contains(s) ||
+                        (r.State ?? "").ToLowerInvariant().Contains(s) ||
                         (r.ServiceType ?? "").ToLowerInvariant().Contains(s));
                 }
 
@@ -303,15 +468,15 @@ namespace AccordionGridProject
                     bool desc = string.Equals(sortDir, "desc",
                                               StringComparison.OrdinalIgnoreCase);
                     if (sortKey == "Description")
-                        all = desc ? all.OrderByDescending(r => r.Description)      : all.OrderBy(r => r.Description);
+                        all = desc ? all.OrderByDescending(r => r.Description) : all.OrderBy(r => r.Description);
                     else if (sortKey == "State")
-                        all = desc ? all.OrderByDescending(r => r.State)             : all.OrderBy(r => r.State);
+                        all = desc ? all.OrderByDescending(r => r.State) : all.OrderBy(r => r.State);
                     else if (sortKey == "ExtractionStatus")
-                        all = desc ? all.OrderByDescending(r => r.ExtractionStatus)  : all.OrderBy(r => r.ExtractionStatus);
+                        all = desc ? all.OrderByDescending(r => r.ExtractionStatus) : all.OrderBy(r => r.ExtractionStatus);
                     else if (sortKey == "MappingStatus")
-                        all = desc ? all.OrderByDescending(r => r.MappingStatus)     : all.OrderBy(r => r.MappingStatus);
+                        all = desc ? all.OrderByDescending(r => r.MappingStatus) : all.OrderBy(r => r.MappingStatus);
                     else if (sortKey == "LastUpdated")
-                        all = desc ? all.OrderByDescending(r => r.LastUpdated)       : all.OrderBy(r => r.LastUpdated);
+                        all = desc ? all.OrderByDescending(r => r.LastUpdated) : all.OrderBy(r => r.LastUpdated);
                     else
                         all = all.OrderBy(r => r.Id);
                 }
@@ -345,29 +510,67 @@ namespace AccordionGridProject
         }
 
         // ─────────────────────────────────────────────────────────────────────
+        // LOOKUP ITEM — matches the real service's LookupItem { Id, Name }.
+        // Id is object because most lookups use int FK ids while GetStates()
+        // uses the string state code. In your real LookupItem this is whatever
+        // type your framework declares.
+        // ─────────────────────────────────────────────────────────────────────
+        public class LookupItem
+        {
+            public object Id { get; set; }
+            public string Name { get; set; }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
         // MODEL — delete and reference your real PoaFormModel when wiring up.
+        //
+        // In the POC the display strings (ServiceType="Full") are kept as-is in
+        // the seed data, and the FK id properties below are COMPUTED from them
+        // via the same lookup maps the JS uses.  In your real EF model these
+        // would already be real columns (service_type_id, etc.) and you'd drop
+        // the computed getters.
         // ─────────────────────────────────────────────────────────────────────
         public class PoaFormModel
         {
-            public int       Id                { get; set; }
-            public string    Description       { get; set; }
-            public string    State             { get; set; }
-            public bool      Active            { get; set; }
-            public int?      MailCenterId      { get; set; }
-            public string    ServiceType       { get; set; }
-            public string    FormType          { get; set; }
-            public string    FormUse           { get; set; }
-            public string    PoaType           { get; set; }
-            public string    SignatureType     { get; set; }
-            public string    OnlineRequirement { get; set; }
-            public string    ReturnType        { get; set; }
-            public string    ExtractionStatus  { get; set; }
-            public string    MappingStatus     { get; set; }
-            public string    DocumentReference { get; set; }
-            public string    FileName          { get; set; }
-            public string    FileExtension     { get; set; }
-            public string    Notes             { get; set; }
-            public DateTime? LastUpdated       { get; set; }
+            public int Id { get; set; }
+            public string Description { get; set; }
+            public string State { get; set; }
+            public bool Active { get; set; }
+            public int? MailCenterId { get; set; }
+            public string ServiceType { get; set; }
+            public string FormType { get; set; }
+            public string FormUse { get; set; }
+            public string PoaType { get; set; }
+            public string SignatureType { get; set; }
+            public string OnlineRequirement { get; set; }
+            public string ReturnType { get; set; }
+            public string ExtractionStatus { get; set; }
+            public string MappingStatus { get; set; }
+            public string DocumentReference { get; set; }
+            public string FileName { get; set; }
+            public string FileExtension { get; set; }
+            public string Notes { get; set; }
+            public DateTime? LastUpdated { get; set; }
+
+            // ── Computed FK ids (POC only) ──────────────────────────────────
+            // Map the display value → id using the same ordering as the JS
+            // LOOKUPS object.  In real EF these are stored columns.
+            public int? ServiceTypeId { get { return MapId(ServiceType, "Full", "Partial", "Limited"); } }
+            public int? PoaFormTypeId { get { return MapId(FormType, "POA", "2848", "8821"); } }
+            public int? FormUseId { get { return MapId(FormUse, "Filing", "Representation", "Both"); } }
+            public int? PoaTypeId { get { return MapId(PoaType, "Tax", "Financial", "Medical"); } }
+            public int? SignatureTypeId { get { return MapId(SignatureType, "Digital", "Electronic", "Wet"); } }
+            public int? ReturnTypeId { get { return MapId(ReturnType, "Mail", "Fax", "E-File", "Portal"); } }
+            public int? OnlineRequirementId { get { return MapId(OnlineRequirement, "None", "Required", "Optional"); } }
+
+            private static int? MapId(string value, params string[] ordered)
+            {
+                if (string.IsNullOrEmpty(value)) return null;
+                for (int i = 0; i < ordered.Length; i++)
+                    if (string.Equals(ordered[i], value, StringComparison.OrdinalIgnoreCase))
+                        return i + 1;   // ids are 1-based to match the JS LOOKUPS
+                return null;
+            }
         }
     }
 }

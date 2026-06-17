@@ -108,519 +108,556 @@
      ClientScript.RegisterStartupScript (runs just before </form>).
 ═════════════════════════════════════════════════════════════════ --%>
 <script type="text/javascript">
-(function () {
-    'use strict';
+    (function () {
+        'use strict';
 
-    /* ── Columns shown in the collapsed row ─────────────────────── */
-    var columns = [
-        { key: 'Description', label: 'Description', sortable: true },
-        { key: 'State',       label: 'State',       width: '70px', sortable: true, align: 'center' },
-        { key: 'ExtractionStatus', label: 'Extraction', width: '130px', sortable: true,
-          badge: { map: { 'Completed':'success','In Progress':'info','Not Started':'default','Error':'danger' }, defaultClass:'default' }
-        },
-        { key: 'MappingStatus', label: 'Mapping', width: '120px', sortable: true,
-          badge: { map: { 'Mapped':'success','Partial':'info','Not Mapped':'default' }, defaultClass:'default' }
-        },
-        { key: 'LastUpdated', label: 'Last Updated', width: '150px', sortable: true,
-          align: 'center',
-          format: function (v) {
-              if (!v) return '<span style="color:#9aa09a;font-size:12px;">—</span>';
-              return '<span style="font-size:12px;">' + v + '</span>';
-          }
-        },
-        { key: 'Active', label: 'Active', width: '70px', align: 'center',
-          format: function (v) {
-              return v
-                  ? '<span class="ag-badge ag-badge-success">Yes</span>'
-                  : '<span class="ag-badge ag-badge-danger">No</span>';
-          }
-        }
-    ];
-
-    /* ── Edit fields shown in the expanded accordion panel ─────── */
-    var editFields = [
-        { key: 'Description',   label: 'Description',   type: 'text',   required: true,  placeholder: 'Enter description' },
-        { key: 'State',         label: 'State',         type: 'select',
-          options: 'AL,AK,AZ,AR,CA,CO,CT,DE,FL,GA,HI,ID,IL,IN,IA,KS,KY,LA,ME,MD,MA,MI,MN,MS,MO,MT,NE,NV,NH,NJ,NM,NY,NC,ND,OH,OK,OR,PA,RI,SC,SD,TN,TX,UT,VT,VA,WA,WV,WI,WY'
-              .split(',').map(function(s){ return { label:s, value:s }; })
-        },
-        { key: 'Active',        label: 'Active',        type: 'checkbox' },
-        { key: 'MailCenterId',  label: 'Mail Center ID',type: 'number',  placeholder: '0' },
-
-        { key: 'ServiceType',   label: 'Service Type',  type: 'select',
-          options: ['Full','Partial','Limited'].map(function(s){ return {label:s,value:s}; }) },
-        { key: 'FormType',      label: 'Form Type',     type: 'select',
-          options: ['POA','2848','8821'].map(function(s){ return {label:s,value:s}; }) },
-        { key: 'FormUse',       label: 'Form Use',      type: 'select',
-          options: ['Filing','Representation','Both'].map(function(s){ return {label:s,value:s}; }) },
-        { key: 'PoaType',       label: 'POA Type',      type: 'select',
-          options: ['Tax','Financial','Medical'].map(function(s){ return {label:s,value:s}; }) },
-
-        { key: 'SignatureType',     label: 'Signature Type',     type: 'select',
-          options: ['Digital','Electronic','Wet'].map(function(s){ return {label:s,value:s}; }) },
-        { key: 'ReturnType',        label: 'Return Type',        type: 'select',
-          options: ['Mail','Fax','E-File','Portal'].map(function(s){ return {label:s,value:s}; }) },
-        { key: 'OnlineRequirement', label: 'Online Requirement', type: 'select',
-          options: ['None','Required','Optional'].map(function(s){ return {label:s,value:s}; }) },
-
-        { key: 'FileName',          label: 'File Name',           type: 'text', readOnly: true },
-        { key: 'DocumentReference', label: 'Document Reference',  type: 'text', readOnly: true },
-        { key: 'Notes',             label: 'Notes',               type: 'textarea', fullWidth: true, placeholder: 'Optional notes…' }
-    ];
-
-    /* ── Sections (green header groupings in the edit panel) ───── */
-    var editSections = [
-        { title: 'Template Info',     fields: ['Description','State','Active','MailCenterId'] },
-        { title: 'Classification',    fields: ['ServiceType','FormType','FormUse','PoaType'] },
-        { title: 'Processing Rules',  fields: ['SignatureType','ReturnType','OnlineRequirement'] },
-        // isDocumentSection:true tells the grid to inject the PDF upload widget here
-        { title: 'Document',          fields: ['FileName','DocumentReference'], isDocumentSection: true },
-        { title: 'Notes',             fields: ['Notes'] }
-    ];
-
-    /* ── Action buttons in the Actions column ───────────────────── */
-    var actionButtons = [
-        { key: 'edit',     label: 'Edit' },
-        { key: 'extract',  label: 'Extract' },
-        { key: 'map',      label: 'Map' },
-        {
-            key: 'generate', label: 'Generate', cssClass: 'ag-btn-primary',
-            visible: function (r) { return r.MappingStatus === 'Mapped'; }
-        },
-        {
-            key: 'download', label: 'Download',
-            visible: function (r) {
-                return !!(r.DocumentReference && r.DocumentReference.length > 0);
+        /* ── Columns shown in the collapsed row ─────────────────────── */
+        var columns = [
+            { key: 'Description', label: 'Description', sortable: true },
+            { key: 'State', label: 'State', width: '70px', sortable: true, align: 'center' },
+            {
+                key: 'ExtractionStatus', label: 'Extraction', width: '130px', sortable: true,
+                badge: { map: { 'Completed': 'success', 'In Progress': 'info', 'Not Started': 'default', 'Error': 'danger' }, defaultClass: 'default' }
+            },
+            {
+                key: 'MappingStatus', label: 'Mapping', width: '120px', sortable: true,
+                badge: { map: { 'Mapped': 'success', 'Partial': 'info', 'Not Mapped': 'default' }, defaultClass: 'default' }
+            },
+            {
+                key: 'LastUpdated', label: 'Last Updated', width: '150px', sortable: true,
+                align: 'center',
+                format: function (v) {
+                    if (!v) return '<span style="color:#9aa09a;font-size:12px;">—</span>';
+                    return '<span style="font-size:12px;">' + v + '</span>';
+                }
+            },
+            {
+                key: 'Active', label: 'Active', width: '70px', align: 'center',
+                format: function (v) {
+                    return v
+                        ? '<span class="ag-badge ag-badge-success">Yes</span>'
+                        : '<span class="ag-badge ag-badge-danger">No</span>';
+                }
             }
-        },
-        { key: 'delete', label: 'Delete', cssClass: 'ag-btn-danger' }
-    ];
+        ];
 
-    /* ── Filter dropdown (by State) ─────────────────────────────── */
-    var filterOptions = [
-        { label: 'All States', value: '' },
-        { label: 'TX', value: 'TX' },
-        { label: 'CA', value: 'CA' },
-        { label: 'OH', value: 'OH' },
-        { label: 'NY', value: 'NY' },
-        { label: 'FL', value: 'FL' }
-    ];
+        /* ── Lookup tables (id ↔ label) ───────────────────────────────
+           In production these come from the server (the same lookup
+           tables that populate your combo boxes), serialized into
+           window.poaLookups by the code-behind.  For the POC they are
+           defined inline here.  The select VALUE is the FK id; the
+           LABEL is what the user sees.  This means the record stores
+           the id (e.g. ServiceType: 1) and the DTO sends it straight
+           to EF as the foreign key — no string lookup needed.
+        ──────────────────────────────────────────────────────────── */
+        var LOOKUPS = (window.poaLookups) || {
+            // These mirror the real PoaFormsService lookup methods.  Each is the
+            // same { label, value } shape the combo boxes consume — value is the
+            // FK id returned by the service (LookupItem.Id), label is LookupItem.Name.
+            //
+            //   serviceTypes       ← GetServiceTypes()       (service_type_id)
+            //   poaFormTypes       ← GetPoaFormTypes()       (poa_form_type_id)
+            //   formUses           ← GetFormUses()           (poa_form_use_id)
+            //   poaTypes           ← GetPoaTypes()           (poa_type_id)
+            //   signatureTypes     ← GetSignatureTypes()     (poa_signature_type_id)
+            //   onlineRequirements ← GetOnlineRequirements() (poa_online_requirement_id)
+            //   returnTypes        ← GetReturnTypes()        (poa_return_type_id)
+            //   states             ← GetStates()             (code, e.g. "TX")
+            //   mailCenters        ← GetMailCenters()        (mail_center_id)
+            serviceTypes: [{ label: 'Full', value: 1 }, { label: 'Partial', value: 2 }, { label: 'Limited', value: 3 }],
+            poaFormTypes: [{ label: 'POA', value: 1 }, { label: '2848', value: 2 }, { label: '8821', value: 3 }],
+            formUses: [{ label: 'Filing', value: 1 }, { label: 'Representation', value: 2 }, { label: 'Both', value: 3 }],
+            poaTypes: [{ label: 'Tax', value: 1 }, { label: 'Financial', value: 2 }, { label: 'Medical', value: 3 }],
+            signatureTypes: [{ label: 'Digital', value: 1 }, { label: 'Electronic', value: 2 }, { label: 'Wet', value: 3 }],
+            onlineRequirements: [{ label: 'None', value: 1 }, { label: 'Required', value: 2 }, { label: 'Optional', value: 3 }],
+            returnTypes: [{ label: 'Mail', value: 1 }, { label: 'Fax', value: 2 }, { label: 'E-File', value: 3 }, { label: 'Portal', value: 4 }],
+            mailCenters: [{ label: 'Mail Center 3', value: 3 }, { label: 'Mail Center 5', value: 5 }, { label: 'Mail Center 6', value: 6 },
+            { label: 'Mail Center 7', value: 7 }, { label: 'Mail Center 8', value: 8 }, { label: 'Mail Center 9', value: 9 },
+            { label: 'Mail Center 10', value: 10 }, { label: 'Mail Center 11', value: 11 }, { label: 'Mail Center 12', value: 12 }],
+            // GetStates() returns code as Id and state name as Name. We use the
+            // code (TX, CA…) as the value because it is shown in the grid column
+            // and used as the filter value.
+            states: 'AL,AK,AZ,AR,CA,CO,CT,DE,FL,GA,HI,ID,IL,IN,IA,KS,KY,LA,ME,MD,MA,MI,MN,MS,MO,MT,NE,NV,NH,NJ,NM,NY,NC,ND,OH,OK,OR,PA,RI,SC,SD,TN,TX,UT,VT,VA,WA,WV,WI,WY'
+                .split(',').map(function (s) { return { label: s, value: s }; })
+        };
 
-    /* ── Create the grid ─────────────────────────────────────────── */
-    var grid = AccordionGrid.create('poaGrid', {
-        title:             'POA Templates',
-        addButtonLabel:    '+ Add New Template',
-        showAddButton:     true,
-        singleExpand:      true,
-        expandMode:        'edit',
-        pageSize:          10,
-        pageSizeOptions:   [10, 25, 50],
-        searchPlaceholder: 'Search templates…',
-        filterField:       'State',
-        filterOptions:     filterOptions,
-        emptyMessage:      'No templates found.',
-        columns:           columns,
-        editFields:        editFields,
-        editSections:      editSections,
-        actionButtons:     actionButtons,
-        showInsert:        true,
-        showUpdate:        true,
-        showDelete:        true,
-        showCancel:        true,
+        /* ── Edit fields shown in the expanded accordion panel ─────── */
+        var editFields = [
+            { key: 'Description', label: 'Description', type: 'text', required: true, placeholder: 'Enter description' },
+            { key: 'State', label: 'State', type: 'select', options: LOOKUPS.states },
+            { key: 'MailCenterId', label: 'Mail Center', type: 'select', options: LOOKUPS.mailCenters },
+            { key: 'Active', label: 'Active', type: 'checkbox' },
 
-        /* ── SERVER-SIDE PAGINATION via dataLoader ───────────────
-           The grid calls this every time the user pages, searches,
-           sorts, or changes the filter.  params contains:
-             { page, pageSize, search, filter, sortKey, sortDir }
-           done(array) hands the page slice back to the grid.
-           The grid uses _serverTotalCount (set below on first load)
-           for the pager — it never tries to count client-side.
-        ────────────────────────────────────────────────────────*/
-        dataLoader: function (params, done) {
-            log('info', 'dataLoader → page=' + params.page +
-                ' size=' + params.pageSize +
-                (params.search  ? ' search="' + params.search + '"'  : '') +
-                (params.filter  ? ' filter="' + params.filter + '"'  : '') +
-                (params.sortKey ? ' sort='    + params.sortKey + ' ' + params.sortDir : ''));
+            { key: 'ServiceType', label: 'Service Type', type: 'select', options: LOOKUPS.serviceTypes },
+            { key: 'PoaFormType', label: 'Form Type', type: 'select', options: LOOKUPS.poaFormTypes },
+            { key: 'FormUse', label: 'Form Use', type: 'select', options: LOOKUPS.formUses },
+            { key: 'PoaType', label: 'POA Type', type: 'select', options: LOOKUPS.poaTypes },
 
-            fetch('Default.aspx/GetPage', {
-                method:  'POST',
+            { key: 'SignatureType', label: 'Signature Type', type: 'select', options: LOOKUPS.signatureTypes },
+            { key: 'ReturnType', label: 'Return Type', type: 'select', options: LOOKUPS.returnTypes },
+            { key: 'OnlineRequirement', label: 'Online Requirement', type: 'select', options: LOOKUPS.onlineRequirements },
+
+            { key: 'FileName', label: 'File Name', type: 'text', readOnly: true },
+            { key: 'DocumentReference', label: 'Document Reference', type: 'text', readOnly: true },
+            { key: 'Notes', label: 'Notes', type: 'textarea', fullWidth: true, placeholder: 'Optional notes…' }
+        ];
+
+        /* ── Sections (green header groupings in the edit panel) ───── */
+        var editSections = [
+            { title: 'Template Info', fields: ['Description', 'State', 'MailCenterId', 'Active'] },
+            { title: 'Classification', fields: ['ServiceType', 'PoaFormType', 'FormUse', 'PoaType'] },
+            { title: 'Processing Rules', fields: ['SignatureType', 'ReturnType', 'OnlineRequirement'] },
+            // isDocumentSection:true tells the grid to inject the PDF upload widget here
+            { title: 'Document', fields: ['FileName', 'DocumentReference'], isDocumentSection: true },
+            { title: 'Notes', fields: ['Notes'] }
+        ];
+
+        /* ── Action buttons in the Actions column ───────────────────── */
+        var actionButtons = [
+            { key: 'edit', label: 'Edit' },
+            { key: 'extract', label: 'Extract' },
+            { key: 'map', label: 'Map' },
+            {
+                key: 'generate', label: 'Generate', cssClass: 'ag-btn-primary',
+                visible: function (r) { return r.MappingStatus === 'Mapped'; }
+            },
+            {
+                key: 'download', label: 'Download',
+                visible: function (r) {
+                    return !!(r.DocumentReference && r.DocumentReference.length > 0);
+                }
+            },
+            { key: 'delete', label: 'Delete', cssClass: 'ag-btn-danger' }
+        ];
+
+        /* ── Filter dropdown (by State) ─────────────────────────────── */
+        var filterOptions = [
+            { label: 'All States', value: '' },
+            { label: 'TX', value: 'TX' },
+            { label: 'CA', value: 'CA' },
+            { label: 'OH', value: 'OH' },
+            { label: 'NY', value: 'NY' },
+            { label: 'FL', value: 'FL' }
+        ];
+
+        /* ── Create the grid ─────────────────────────────────────────── */
+        var grid = AccordionGrid.create('poaGrid', {
+            title: 'POA Templates',
+            addButtonLabel: '+ Add New Template',
+            showAddButton: true,
+            singleExpand: true,
+            expandMode: 'edit',
+            pageSize: 10,
+            pageSizeOptions: [10, 25, 50],
+            searchPlaceholder: 'Search templates…',
+            filterField: 'State',
+            filterOptions: filterOptions,
+            emptyMessage: 'No templates found.',
+            columns: columns,
+            editFields: editFields,
+            editSections: editSections,
+            actionButtons: actionButtons,
+            showInsert: true,
+            showUpdate: true,
+            showDelete: true,
+            showCancel: true,
+
+            /* ── SERVER-SIDE PAGINATION via dataLoader ───────────────
+               The grid calls this every time the user pages, searches,
+               sorts, or changes the filter.  params contains:
+                 { page, pageSize, search, filter, sortKey, sortDir }
+               done(array) hands the page slice back to the grid.
+               The grid uses _serverTotalCount (set below on first load)
+               for the pager — it never tries to count client-side.
+            ────────────────────────────────────────────────────────*/
+            dataLoader: function (params, done) {
+                log('info', 'dataLoader → page=' + params.page +
+                    ' size=' + params.pageSize +
+                    (params.search ? ' search="' + params.search + '"' : '') +
+                    (params.filter ? ' filter="' + params.filter + '"' : '') +
+                    (params.sortKey ? ' sort=' + params.sortKey + ' ' + params.sortDir : ''));
+
+                fetch('Default.aspx/GetPage', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json; charset=utf-8',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: JSON.stringify({
+                        page: params.page,
+                        pageSize: params.pageSize,
+                        search: params.search || '',
+                        filter: params.filter || '',
+                        sortKey: params.sortKey || '',
+                        sortDir: params.sortDir || 'asc'
+                    }),
+                    credentials: 'same-origin'
+                })
+                    .then(function (r) {
+                        if (!r.ok) throw new Error('HTTP ' + r.status);
+                        return r.json();
+                    })
+                    .then(function (resp) {
+                        // WebMethod wraps in { d: "json-string" }
+                        var payload = typeof resp.d === 'string'
+                            ? JSON.parse(resp.d) : resp;
+
+                        // Update the pager total any time the server reports a new count
+                        // (search/filter may reduce it)
+                        grid._serverTotalCount = payload.totalCount;
+                        grid._filtered = { length: payload.totalCount }; // tells pager the real total
+                        log('ok', 'dataLoader ← ' + payload.items.length +
+                            ' items, total=' + payload.totalCount);
+                        done(payload.items);
+                    })
+                    .catch(function (err) {
+                        log('err', 'dataLoader failed: ' + err.message);
+                        done([]);
+                    });
+            },
+
+            /* ── PDF / blob upload ──────────────────────────────────
+               Called by the grid when user clicks "Upload to Storage".
+               Receives: file (File object), onProgress(pct), done(err, guid)
+               In production: POST to UploadDocument WebMethod.
+            ────────────────────────────────────────────────────────*/
+            uploadDocumentField: 'DocumentReference',   // GUID stored here
+            uploadMaxSizeMb: 20,                   // 15 | 20 | 30 — default 20
+            uploadAllowedExtensions: ['.pdf'],          // e.g. ['.pdf','.docx','.tiff']
+            onUploadDocument: function (file, onProgress, done) {
+                log('info', 'Upload started: ' + file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)');
+
+                // POST to the Generic Handler (.ashx) — NOT a [WebMethod].
+                // [WebMethod] requires Content-Type: application/json and cannot
+                // receive multipart/form-data; the .ashx handles all request types.
+                var form = new FormData();
+                form.append('file', file, file.name);   // key "file" must match
+                // Request.Files["file"] in the handler
+
+                // XHR instead of fetch() — only XHR exposes upload progress events.
+                var xhr = new XMLHttpRequest();
+
+                xhr.upload.addEventListener('progress', function (e) {
+                    if (e.lengthComputable) {
+                        onProgress(Math.round((e.loaded / e.total) * 100));
+                    }
+                });
+
+                xhr.addEventListener('load', function () {
+                    try {
+                        var resp = JSON.parse(xhr.responseText);
+                        if (xhr.status === 200 && resp.guid) {
+                            log('ok', 'Upload complete. Reference: ' + resp.guid);
+                            done(null, resp.guid);
+                        } else {
+                            // Handler returned { "error": "..." }
+                            var msg = (resp && resp.error) ? resp.error : 'Upload failed (HTTP ' + xhr.status + ').';
+                            log('err', msg);
+                            done(msg);
+                        }
+                    } catch (ex) {
+                        // Response was not JSON — likely an unhandled server error page
+                        var raw = xhr.responseText ? xhr.responseText.substring(0, 120) : '(empty)';
+                        log('err', 'Non-JSON response: ' + raw);
+                        done('Unexpected response from server. Check the browser Network tab for details.');
+                    }
+                });
+
+                xhr.addEventListener('error', function () {
+                    var msg = 'Network error during upload.';
+                    log('err', msg);
+                    done(msg);
+                });
+
+                xhr.open('POST', 'UploadDocument.ashx');
+                xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+                xhr.send(form);
+            },
+
+            /* ── Callbacks ─────────────────────────────────────────── */
+            onLoad: function (e) {
+                log('ok', 'Grid loaded — ' + e.data.length + ' records.');
+            },
+
+            onSave: function (e) {
+                // Build a clean payload containing only the fields PoaFormDto
+                // expects.  e.record also contains internal grid keys (_agId,
+                // ExtractionStatus, etc.) that would cause a 500 if sent raw.
+                // Active comes from a checkbox so coerce to bool explicitly.
+                var dto = {
+                    Id: e.record.Id || 0,
+                    Description: e.record.Description || '',
+                    State: e.record.State || '',   // code (TX, CA…) → StateId on server
+                    Active: e.record.Active === true || e.record.Active === 'true' || e.record.Active === 'on',
+                    MailCenterId: parseInt(e.record.MailCenterId, 10) || null,
+
+                    // Select fields carry the FK id as their value.
+                    ServiceTypeId: parseInt(e.record.ServiceType, 10) || null,
+                    PoaFormTypeId: parseInt(e.record.PoaFormType, 10) || null,
+                    FormUseId: parseInt(e.record.FormUse, 10) || null,
+                    PoaTypeId: parseInt(e.record.PoaType, 10) || null,
+                    SignatureTypeId: parseInt(e.record.SignatureType, 10) || null,
+                    ReturnTypeId: parseInt(e.record.ReturnType, 10) || null,
+                    OnlineRequirementId: parseInt(e.record.OnlineRequirement, 10) || null,
+
+                    DocumentReference: e.record.DocumentReference || '',
+                    FileName: e.record.FileName || '',
+                    FileExtension: e.record.FileExtension || '',
+                    Notes: e.record.Notes || ''
+                };
+
+                if (e.isNew) {
+                    // ── INSERT ────────────────────────────────────────────────
+                    // ASP.NET WebMethod with a DTO parameter requires the body
+                    // wrapped as { "form": { ... } } matching the param name.
+                    callPageMethod('InsertForm', { form: dto }, function (resp) {
+                        grid.updateRecord(e.record._agId, {
+                            Id: resp.Id,
+                            LastUpdated: resp.LastUpdated
+                        });
+                        log('ok', 'INSERT confirmed — newId=' + resp.Id
+                            + '  updated=' + resp.LastUpdated);
+                    });
+                } else {
+                    // ── UPDATE ────────────────────────────────────────────────
+                    callPageMethod('UpdateForm', { form: dto }, function (resp) {
+                        grid.updateRecord(e.record._agId, {
+                            LastUpdated: resp.LastUpdated
+                        });
+                        log('ok', 'UPDATE confirmed — id=' + e.record.Id
+                            + '  updated=' + resp.LastUpdated);
+                    });
+                }
+            },
+
+            onDelete: function (e) {
+                // Fired by the form Cancel/Delete button inside the expanded panel.
+                // The action-button Delete path is handled in onActionClick below.
+                log('warn', 'onDelete fired — id=' + e.record.Id);
+            },
+
+            onActionClick: function (e) {
+                switch (e.action) {
+
+                    // ── EDIT ──────────────────────────────────────────────────
+                    case 'edit':
+                        // Expands the row in full edit mode (all fields editable).
+                        // The ▶ arrow expands in read-only view mode instead.
+                        grid.expandRowForEdit(e.id);
+                        break;
+
+                    // ── EXTRACT ───────────────────────────────────────────────
+                    // 1. POST to TriggerExtraction  → sets status "In Progress",
+                    //    enqueues Hangfire job, returns JobId.
+                    // 2. Badge flips to "In Progress" immediately.
+                    // 3. Poll GetExtractionStatus every 5 s until Completed/Error.
+                    // 4. Badge flips to final status and polling stops.
+                    case 'extract':
+                        callPageMethod('TriggerExtraction', { Id: e.record.Id },
+                            function (resp) {
+                                grid.updateRecord(e.id, { ExtractionStatus: resp.Status });
+                                log('info', 'Extraction queued — id=' + e.record.Id
+                                    + '  jobId=' + resp.JobId);
+                                startExtractionPolling(e.id, e.record.Id, resp.JobId);
+                            });
+                        break;
+
+                    // ── MAP ───────────────────────────────────────────────────
+                    // Calls TriggerMapping which can return a RedirectUrl for the
+                    // mapping page OR update the status inline.
+                    // In production: uncomment window.location.href redirect.
+                    case 'map':
+                        callPageMethod('TriggerMapping', { Id: e.record.Id },
+                            function (resp) {
+                                grid.updateRecord(e.id, { MappingStatus: resp.Status });
+                                log('info', 'Mapping triggered — id=' + e.record.Id
+                                    + '  status=' + resp.Status);
+                                // In production, navigate to mapping page:
+                                // if (resp.RedirectUrl) window.location.href = resp.RedirectUrl;
+                            });
+                        break;
+
+                    // ── GENERATE ─────────────────────────────────────────────
+                    // Calls GenerateDocument which triggers the merge pipeline.
+                    // In production: navigate to the generated document URL.
+                    case 'generate':
+                        callPageMethod('GenerateDocument', { Id: e.record.Id },
+                            function (resp) {
+                                log('ok', 'Generate confirmed — id=' + e.record.Id);
+                                // In production, navigate to the output:
+                                // if (resp.RedirectUrl) window.location.href = resp.RedirectUrl;
+                                alert('Document generated for: ' + e.record.Description);
+                            });
+                        break;
+
+                    // ── DOWNLOAD ─────────────────────────────────────────────
+                    // Fetches the blob from DownloadDocument.ashx (mirrors
+                    // GetXMFaxReceipt: blobName → stream → file attachment).
+                    case 'download':
+                        if (e.record.DocumentReference) {
+                            var url = 'DownloadDocument.ashx' +
+                                '?blobName=' + encodeURIComponent(e.record.DocumentReference) +
+                                '&fileName=' + encodeURIComponent(e.record.FileName || e.record.DocumentReference) +
+                                '&fileExt=' + encodeURIComponent(e.record.FileExtension || '.pdf');
+                            log('info', 'Download → ' + url);
+                            // Hidden iframe: triggers browser save dialog without
+                            // navigating away from the page.
+                            var dlFrame = document.getElementById('ag-dl-frame');
+                            if (!dlFrame) {
+                                dlFrame = document.createElement('iframe');
+                                dlFrame.id = 'ag-dl-frame';
+                                dlFrame.style.display = 'none';
+                                document.body.appendChild(dlFrame);
+                            }
+                            dlFrame.src = url;
+                        }
+                        break;
+
+                    // ── DELETE ────────────────────────────────────────────────
+                    // Confirms with the user, calls DeleteForm WebMethod, then
+                    // removes the row from the grid only after server confirms.
+                    case 'delete':
+                        if (confirm('Delete "' + e.record.Description + '"?')) {
+                            callPageMethod('DeleteForm', { Id: e.record.Id },
+                                function (resp) {
+                                    if (resp && resp.Success) {
+                                        grid.removeRecord(e.id);
+                                        log('warn', 'DELETE confirmed — id=' + e.record.Id
+                                            + ' "' + e.record.Description + '"');
+                                    } else {
+                                        log('err', 'DELETE failed — id=' + e.record.Id);
+                                    }
+                                });
+                        }
+                        break;
+                }
+            },
+
+            onSearch: function (e) { log('info', 'Search: "' + e.value + '"'); },
+            onFilterChange: function (e) { log('info', 'Filter: "' + (e.value || 'All') + '"'); },
+            onSort: function (e) { log('info', 'Sort: ' + e.key + ' ' + e.dir); },
+            onPageChange: function (e) { log('info', 'Page: ' + e.page); }
+        });
+
+        /* ── Extraction polling ───────────────────────────────────────
+           After TriggerExtraction succeeds, poll GetExtractionStatus
+           every 5 seconds until the job reaches Completed or Error.
+           The badge updates in real time with each status response.
+        ──────────────────────────────────────────────────────────── */
+        function startExtractionPolling(agId, formId, jobId) {
+            var MAX_POLLS = 24;   // 24 × 5s = 2 minutes max before giving up
+            var polls = 0;
+
+            var timer = setInterval(function () {
+                polls++;
+                callPageMethod('GetExtractionStatus', { Id: formId },
+                    function (resp) {
+                        log('info', 'Poll #' + polls + ' — id=' + formId
+                            + '  status=' + resp.Status
+                            + (jobId ? '  job=' + jobId : ''));
+
+                        grid.updateRecord(agId, { ExtractionStatus: resp.Status });
+
+                        if (resp.Status === 'Completed' || resp.Status === 'Error') {
+                            clearInterval(timer);
+                            log(resp.Status === 'Completed' ? 'ok' : 'err',
+                                'Extraction ' + resp.Status + ' — id=' + formId);
+                        } else if (polls >= MAX_POLLS) {
+                            clearInterval(timer);
+                            log('warn', 'Extraction polling timed out — id=' + formId);
+                        }
+                    });
+            }, 5000);   // poll every 5 seconds
+        }
+
+        /* ── Generic WebMethod caller ─────────────────────────────────
+           POSTs JSON to Default.aspx/<method>, unwraps ASP.NET's
+           { d: "json-string" } wrapper, parses the inner JSON, and
+           calls onSuccess(parsedResult).
+        ──────────────────────────────────────────────────────────── */
+        function callPageMethod(method, payload, onSuccess) {
+            fetch(window.location.pathname + '/' + method, {
+                method: 'POST',
                 headers: {
-                    'Content-Type':     'application/json; charset=utf-8',
+                    'Content-Type': 'application/json; charset=utf-8',
                     'X-Requested-With': 'XMLHttpRequest'
                 },
-                body: JSON.stringify({
-                    page:    params.page,
-                    pageSize:params.pageSize,
-                    search:  params.search  || '',
-                    filter:  params.filter  || '',
-                    sortKey: params.sortKey || '',
-                    sortDir: params.sortDir || 'asc'
-                }),
+                body: JSON.stringify(payload),
                 credentials: 'same-origin'
             })
-            .then(function (r) {
-                if (!r.ok) throw new Error('HTTP ' + r.status);
-                return r.json();
-            })
-            .then(function (resp) {
-                // WebMethod wraps in { d: "json-string" }
-                var payload = typeof resp.d === 'string'
-                    ? JSON.parse(resp.d) : resp;
-
-                // Update the pager total any time the server reports a new count
-                // (search/filter may reduce it)
-                grid._serverTotalCount = payload.totalCount;
-                grid._filtered = { length: payload.totalCount }; // tells pager the real total
-                log('ok', 'dataLoader ← ' + payload.items.length +
-                    ' items, total=' + payload.totalCount);
-                done(payload.items);
-            })
-            .catch(function (err) {
-                log('err', 'dataLoader failed: ' + err.message);
-                done([]);
-            });
-        },
-
-        /* ── PDF / blob upload ──────────────────────────────────
-           Called by the grid when user clicks "Upload to Storage".
-           Receives: file (File object), onProgress(pct), done(err, guid)
-           In production: POST to UploadDocument WebMethod.
-        ────────────────────────────────────────────────────────*/
-        uploadDocumentField: 'DocumentReference',   // GUID stored here
-        uploadMaxSizeMb:      20,                   // 15 | 20 | 30 — default 20
-        uploadAllowedExtensions: ['.pdf'],          // e.g. ['.pdf','.docx','.tiff']
-        onUploadDocument: function (file, onProgress, done) {
-            log('info', 'Upload started: ' + file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)');
-
-            // POST to the Generic Handler (.ashx) — NOT a [WebMethod].
-            // [WebMethod] requires Content-Type: application/json and cannot
-            // receive multipart/form-data; the .ashx handles all request types.
-            var form = new FormData();
-            form.append('file', file, file.name);   // key "file" must match
-                                                     // Request.Files["file"] in the handler
-
-            // XHR instead of fetch() — only XHR exposes upload progress events.
-            var xhr = new XMLHttpRequest();
-
-            xhr.upload.addEventListener('progress', function (e) {
-                if (e.lengthComputable) {
-                    onProgress(Math.round((e.loaded / e.total) * 100));
-                }
-            });
-
-            xhr.addEventListener('load', function () {
-                try {
-                    var resp = JSON.parse(xhr.responseText);
-                    if (xhr.status === 200 && resp.guid) {
-                        log('ok', 'Upload complete. Reference: ' + resp.guid);
-                        done(null, resp.guid);
-                    } else {
-                        // Handler returned { "error": "..." }
-                        var msg = (resp && resp.error) ? resp.error : 'Upload failed (HTTP ' + xhr.status + ').';
-                        log('err', msg);
-                        done(msg);
+                .then(function (r) {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                })
+                .then(function (resp) {
+                    // WebMethods return { "d": "json-string" } — parse the inner value
+                    var inner = (resp && resp.d !== undefined) ? resp.d : resp;
+                    if (typeof inner === 'string') {
+                        try { inner = JSON.parse(inner); } catch (e) { /* scalar value */ }
                     }
-                } catch (ex) {
-                    // Response was not JSON — likely an unhandled server error page
-                    var raw = xhr.responseText ? xhr.responseText.substring(0, 120) : '(empty)';
-                    log('err', 'Non-JSON response: ' + raw);
-                    done('Unexpected response from server. Check the browser Network tab for details.');
-                }
-            });
-
-            xhr.addEventListener('error', function () {
-                var msg = 'Network error during upload.';
-                log('err', msg);
-                done(msg);
-            });
-
-            xhr.open('POST', 'UploadDocument.ashx');
-            xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
-            xhr.send(form);
-        },
-
-        /* ── Callbacks ─────────────────────────────────────────── */
-        onLoad: function (e) {
-            log('ok', 'Grid loaded — ' + e.data.length + ' records.');
-        },
-
-        onSave: function (e) {
-            // Build a clean payload containing only the fields PoaFormDto
-            // expects.  e.record also contains internal grid keys (_agId,
-            // ExtractionStatus, etc.) that would cause a 500 if sent raw.
-            // Active comes from a checkbox so coerce to bool explicitly.
-            var dto = {
-                Id:                e.record.Id                || 0,
-                Description:       e.record.Description       || '',
-                State:             e.record.State             || '',
-                Active:            e.record.Active === true || e.record.Active === 'true' || e.record.Active === 'on',
-                MailCenterId:      parseInt(e.record.MailCenterId, 10) || null,
-                ServiceType:       e.record.ServiceType       || '',
-                FormType:          e.record.FormType          || '',
-                FormUse:           e.record.FormUse           || '',
-                PoaType:           e.record.PoaType           || '',
-                SignatureType:     e.record.SignatureType     || '',
-                OnlineRequirement: e.record.OnlineRequirement || '',
-                ReturnType:        e.record.ReturnType        || '',
-                DocumentReference: e.record.DocumentReference || '',
-                FileName:          e.record.FileName          || '',
-                FileExtension:     e.record.FileExtension     || '',
-                Notes:             e.record.Notes             || ''
-            };
-
-            if (e.isNew) {
-                // ── INSERT ────────────────────────────────────────────────
-                // ASP.NET WebMethod with a DTO parameter requires the body
-                // wrapped as { "form": { ... } } matching the param name.
-                callPageMethod('InsertForm', { form: dto }, function (resp) {
-                    grid.updateRecord(e.record._agId, {
-                        Id:          resp.Id,
-                        LastUpdated: resp.LastUpdated
-                    });
-                    log('ok', 'INSERT confirmed — newId=' + resp.Id
-                        + '  updated=' + resp.LastUpdated);
+                    if (onSuccess) onSuccess(inner);
+                })
+                .catch(function (err) {
+                    log('err', method + ' failed: ' + err.message);
                 });
-            } else {
-                // ── UPDATE ────────────────────────────────────────────────
-                callPageMethod('UpdateForm', { form: dto }, function (resp) {
-                    grid.updateRecord(e.record._agId, {
-                        LastUpdated: resp.LastUpdated
-                    });
-                    log('ok', 'UPDATE confirmed — id=' + e.record.Id
-                        + '  updated=' + resp.LastUpdated);
-                });
-            }
-        },
+        }
 
-        onDelete: function (e) {
-            // Fired by the form Cancel/Delete button inside the expanded panel.
-            // The action-button Delete path is handled in onActionClick below.
-            log('warn', 'onDelete fired — id=' + e.record.Id);
-        },
+        /* ── Load initial data ────────────────────────────────────────
+           poaInitialData is { items:[...], totalCount:N, pageSize:N, page:1 }
+           set by RegisterStartupScript / HiddenField on Page_Load.
+           This is the FIRST page only — every subsequent page goes
+           through dataLoader → GetPage WebMethod.
+        ──────────────────────────────────────────────────────────── */
+        var initial = null;
 
-        onActionClick: function (e) {
-            switch (e.action) {
+        // Primary: hidden field (always rendered, no timing dependency)
+        var hiddenEl = document.getElementById('HiddenGridData');
+        if (hiddenEl && hiddenEl.value && hiddenEl.value !== '[]' && hiddenEl.value !== '') {
+            try { initial = JSON.parse(hiddenEl.value); }
+            catch (ex) { log('err', 'HiddenField parse error: ' + ex.message); }
+        }
+        // Secondary: window variable from RegisterStartupScript
+        if (!initial && window.poaInitialData) {
+            initial = window.poaInitialData;
+        }
 
-                // ── EDIT ──────────────────────────────────────────────────
-                case 'edit':
-                    // Expands the row in full edit mode (all fields editable).
-                    // The ▶ arrow expands in read-only view mode instead.
-                    grid.expandRowForEdit(e.id);
-                    break;
+        if (initial && initial.items && initial.items.length) {
+            // Tell the grid the TRUE total so the pager shows correct page count
+            // even though we only handed it the first page slice.
+            grid._serverTotalCount = initial.totalCount;
 
-                // ── EXTRACT ───────────────────────────────────────────────
-                // 1. POST to TriggerExtraction  → sets status "In Progress",
-                //    enqueues Hangfire job, returns JobId.
-                // 2. Badge flips to "In Progress" immediately.
-                // 3. Poll GetExtractionStatus every 5 s until Completed/Error.
-                // 4. Badge flips to final status and polling stops.
-                case 'extract':
-                    callPageMethod('TriggerExtraction', { Id: e.record.Id },
-                        function (resp) {
-                            grid.updateRecord(e.id, { ExtractionStatus: resp.Status });
-                            log('info', 'Extraction queued — id=' + e.record.Id
-                                + '  jobId=' + resp.JobId);
-                            startExtractionPolling(e.id, e.record.Id, resp.JobId);
-                        });
-                    break;
+            log('ok', 'Initial load — ' + initial.items.length +
+                ' items on page 1 of ' +
+                Math.ceil(initial.totalCount / initial.pageSize) +
+                ' (total: ' + initial.totalCount + ').');
 
-                // ── MAP ───────────────────────────────────────────────────
-                // Calls TriggerMapping which can return a RedirectUrl for the
-                // mapping page OR update the status inline.
-                // In production: uncomment window.location.href redirect.
-                case 'map':
-                    callPageMethod('TriggerMapping', { Id: e.record.Id },
-                        function (resp) {
-                            grid.updateRecord(e.id, { MappingStatus: resp.Status });
-                            log('info', 'Mapping triggered — id=' + e.record.Id
-                                + '  status=' + resp.Status);
-                            // In production, navigate to mapping page:
-                            // if (resp.RedirectUrl) window.location.href = resp.RedirectUrl;
-                        });
-                    break;
+            grid.loadData(initial.items);
 
-                // ── GENERATE ─────────────────────────────────────────────
-                // Calls GenerateDocument which triggers the merge pipeline.
-                // In production: navigate to the generated document URL.
-                case 'generate':
-                    callPageMethod('GenerateDocument', { Id: e.record.Id },
-                        function (resp) {
-                            log('ok', 'Generate confirmed — id=' + e.record.Id);
-                            // In production, navigate to the output:
-                            // if (resp.RedirectUrl) window.location.href = resp.RedirectUrl;
-                            alert('Document generated for: ' + e.record.Description);
-                        });
-                    break;
+            // Patch the pager total after loadData (loadData resets _filtered)
+            grid._filtered = { length: initial.totalCount };
+            grid._renderPager && grid._renderPager();
+        } else {
+            log('err', 'No initial data — check LoadFirstPage() in code-behind.');
+        }
 
-                // ── DOWNLOAD ─────────────────────────────────────────────
-                // Fetches the blob from DownloadDocument.ashx (mirrors
-                // GetXMFaxReceipt: blobName → stream → file attachment).
-                case 'download':
-                    if (e.record.DocumentReference) {
-                        var url = 'DownloadDocument.ashx' +
-                            '?blobName=' + encodeURIComponent(e.record.DocumentReference) +
-                            '&fileName=' + encodeURIComponent(e.record.FileName || e.record.DocumentReference) +
-                            '&fileExt='  + encodeURIComponent(e.record.FileExtension || '.pdf');
-                        log('info', 'Download → ' + url);
-                        // Hidden iframe: triggers browser save dialog without
-                        // navigating away from the page.
-                        var dlFrame = document.getElementById('ag-dl-frame');
-                        if (!dlFrame) {
-                            dlFrame = document.createElement('iframe');
-                            dlFrame.id = 'ag-dl-frame';
-                            dlFrame.style.display = 'none';
-                            document.body.appendChild(dlFrame);
-                        }
-                        dlFrame.src = url;
-                    }
-                    break;
+        /* ── Debug log helpers ───────────────────────────────────── */
+        function log(level, msg) {
+            var panel = document.getElementById('debugPanel');
+            var line = document.createElement('div');
+            var ts = new Date().toLocaleTimeString();
+            line.className = level;
+            line.textContent = '[' + ts + '] ' + msg;
+            panel.appendChild(line);
+            panel.scrollTop = panel.scrollHeight;
+            console[level === 'err' ? 'error' : level === 'warn' ? 'warn' : 'log'](msg);
+        }
 
-                // ── DELETE ────────────────────────────────────────────────
-                // Confirms with the user, calls DeleteForm WebMethod, then
-                // removes the row from the grid only after server confirms.
-                case 'delete':
-                    if (confirm('Delete "' + e.record.Description + '"?')) {
-                        callPageMethod('DeleteForm', { Id: e.record.Id },
-                            function (resp) {
-                                if (resp && resp.Success) {
-                                    grid.removeRecord(e.id);
-                                    log('warn', 'DELETE confirmed — id=' + e.record.Id
-                                        + ' "' + e.record.Description + '"');
-                                } else {
-                                    log('err', 'DELETE failed — id=' + e.record.Id);
-                                }
-                            });
-                    }
-                    break;
-            }
-        },
+    }());
 
-        onSearch:       function (e) { log('info', 'Search: "' + e.value + '"'); },
-        onFilterChange: function (e) { log('info', 'Filter: "' + (e.value || 'All') + '"'); },
-        onSort:         function (e) { log('info', 'Sort: ' + e.key + ' ' + e.dir); },
-        onPageChange:   function (e) { log('info', 'Page: ' + e.page); }
-    });
-
-    /* ── Extraction polling ───────────────────────────────────────
-       After TriggerExtraction succeeds, poll GetExtractionStatus
-       every 5 seconds until the job reaches Completed or Error.
-       The badge updates in real time with each status response.
-    ──────────────────────────────────────────────────────────── */
-    function startExtractionPolling(agId, formId, jobId) {
-        var MAX_POLLS = 24;   // 24 × 5s = 2 minutes max before giving up
-        var polls     = 0;
-
-        var timer = setInterval(function () {
-            polls++;
-            callPageMethod('GetExtractionStatus', { Id: formId },
-                function (resp) {
-                    log('info', 'Poll #' + polls + ' — id=' + formId
-                        + '  status=' + resp.Status
-                        + (jobId ? '  job=' + jobId : ''));
-
-                    grid.updateRecord(agId, { ExtractionStatus: resp.Status });
-
-                    if (resp.Status === 'Completed' || resp.Status === 'Error') {
-                        clearInterval(timer);
-                        log(resp.Status === 'Completed' ? 'ok' : 'err',
-                            'Extraction ' + resp.Status + ' — id=' + formId);
-                    } else if (polls >= MAX_POLLS) {
-                        clearInterval(timer);
-                        log('warn', 'Extraction polling timed out — id=' + formId);
-                    }
-                });
-        }, 5000);   // poll every 5 seconds
+    function toggleDebug() {
+        var p = document.getElementById('debugPanel');
+        p.style.display = p.style.display === 'none' ? 'block' : 'none';
     }
-
-    /* ── Generic WebMethod caller ─────────────────────────────────
-       POSTs JSON to Default.aspx/<method>, unwraps ASP.NET's
-       { d: "json-string" } wrapper, parses the inner JSON, and
-       calls onSuccess(parsedResult).
-    ──────────────────────────────────────────────────────────── */
-    function callPageMethod(method, payload, onSuccess) {
-        fetch(window.location.pathname + '/' + method, {
-            method:  'POST',
-            headers: {
-                'Content-Type':     'application/json; charset=utf-8',
-                'X-Requested-With': 'XMLHttpRequest'
-            },
-            body:        JSON.stringify(payload),
-            credentials: 'same-origin'
-        })
-        .then(function (r) {
-            if (!r.ok) throw new Error('HTTP ' + r.status);
-            return r.json();
-        })
-        .then(function (resp) {
-            // WebMethods return { "d": "json-string" } — parse the inner value
-            var inner = (resp && resp.d !== undefined) ? resp.d : resp;
-            if (typeof inner === 'string') {
-                try { inner = JSON.parse(inner); } catch (e) { /* scalar value */ }
-            }
-            if (onSuccess) onSuccess(inner);
-        })
-        .catch(function (err) {
-            log('err', method + ' failed: ' + err.message);
-        });
-    }
-
-    /* ── Load initial data ────────────────────────────────────────
-       poaInitialData is { items:[...], totalCount:N, pageSize:N, page:1 }
-       set by RegisterStartupScript / HiddenField on Page_Load.
-       This is the FIRST page only — every subsequent page goes
-       through dataLoader → GetPage WebMethod.
-    ──────────────────────────────────────────────────────────── */
-    var initial = null;
-
-    // Primary: hidden field (always rendered, no timing dependency)
-    var hiddenEl = document.getElementById('HiddenGridData');
-    if (hiddenEl && hiddenEl.value && hiddenEl.value !== '[]' && hiddenEl.value !== '') {
-        try   { initial = JSON.parse(hiddenEl.value); }
-        catch (ex) { log('err', 'HiddenField parse error: ' + ex.message); }
-    }
-    // Secondary: window variable from RegisterStartupScript
-    if (!initial && window.poaInitialData) {
-        initial = window.poaInitialData;
-    }
-
-    if (initial && initial.items && initial.items.length) {
-        // Tell the grid the TRUE total so the pager shows correct page count
-        // even though we only handed it the first page slice.
-        grid._serverTotalCount = initial.totalCount;
-
-        log('ok', 'Initial load — ' + initial.items.length +
-            ' items on page 1 of ' +
-            Math.ceil(initial.totalCount / initial.pageSize) +
-            ' (total: ' + initial.totalCount + ').');
-
-        grid.loadData(initial.items);
-
-        // Patch the pager total after loadData (loadData resets _filtered)
-        grid._filtered = { length: initial.totalCount };
-        grid._renderPager && grid._renderPager();
-    } else {
-        log('err', 'No initial data — check LoadFirstPage() in code-behind.');
-    }
-
-    /* ── Debug log helpers ───────────────────────────────────── */
-    function log(level, msg) {
-        var panel = document.getElementById('debugPanel');
-        var line  = document.createElement('div');
-        var ts    = new Date().toLocaleTimeString();
-        line.className = level;
-        line.textContent = '[' + ts + '] ' + msg;
-        panel.appendChild(line);
-        panel.scrollTop = panel.scrollHeight;
-        console[level === 'err' ? 'error' : level === 'warn' ? 'warn' : 'log'](msg);
-    }
-
-}());
-
-function toggleDebug() {
-    var p = document.getElementById('debugPanel');
-    p.style.display = p.style.display === 'none' ? 'block' : 'none';
-}
 </script>
 
 </body>
