@@ -1,0 +1,418 @@
+﻿═══════════════════════════════════════════════════════════════════════════════
+ POA FORM MANAGEMENT — ACCORDION GRID
+ Implementation Guide & Real Service Wiring Reference
+ Iteration 3 — June 2026
+═══════════════════════════════════════════════════════════════════════════════
+
+
+TABLE OF CONTENTS
+─────────────────
+  1. Architecture Overview
+  2. File Inventory
+  3. How the Data Flows End-to-End
+  4. Combo Box / Lookup System
+  5. Wiring the Real PoaFormsService
+  6. Insert / Update Flow
+  7. Delete Flow
+  8. Extraction Flow (Hangfire + Polling)
+  9. Document Upload & Download
+  10. Server-Side Pagination
+  11. Iteration History
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 1.  ARCHITECTURE OVERVIEW
+═══════════════════════════════════════════════════════════════════════════════
+
+The POA Form Management page is built as:
+
+  ┌──────────────────────────────────┐
+  │  Default.aspx  (page)            │   ← page markup + JS grid init
+  │  Default.aspx.cs  (code-behind)  │   ← WebMethods, data loading, lookups
+  │  AccordionGrid.js  (component)   │   ← reusable grid (zero dependencies)
+  │  UploadDocument.ashx             │   ← PDF upload to blob storage
+  │  DownloadDocument.ashx           │   ← blob download as file attachment
+  └──────────────────────────────────┘
+
+Key design principles:
+
+  • AccordionGrid.js is a GENERIC, REUSABLE component.  It knows nothing about
+    POA forms, services, or ASP.NET.  All domain logic lives in Default.aspx and
+    Default.aspx.cs.
+
+  • Every piece of domain data (combo box options, grid data, WebMethod
+    endpoints) is injected into the grid through configuration — the grid just
+    renders what it receives.
+
+  • The POC uses FakePoaFormsService with hardcoded seed data.  Swapping to the
+    real service is a one-line change per call — the shapes already match.
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 2.  FILE INVENTORY
+═══════════════════════════════════════════════════════════════════════════════
+
+  Scripts/AccordionGrid.js      Zero-dependency accordion grid component.
+                                 Self-contained CSS.  ~2300 lines.
+                                 Drop into any WebForms page.
+
+  Default.aspx                  ASPX page.  Contains:
+                                 - LOOKUPS object (combo box options)
+                                 - Column, editField, editSection definitions
+                                 - Action button handlers (edit, extract, map,
+                                   generate, download, delete)
+                                 - onSave DTO builder
+                                 - callPageMethod helper (generic WebMethod caller)
+                                 - startExtractionPolling (status poll loop)
+                                 - Data loading from HiddenField / window variable
+
+  Default.aspx.cs               Code-behind.  Contains:
+                                 - LoadFirstPage: serializes first page + lookups
+                                 - WebMethods: GetPage, InsertForm, UpdateForm,
+                                   DeleteForm, TriggerExtraction,
+                                   GetExtractionStatus, TriggerMapping,
+                                   GenerateDocument
+                                 - FakePoaFormsService: seed data + lookup methods
+                                 - PoaFormDto: form payload from JS
+                                 - PoaFormModel: data model for the grid
+                                 - LookupItem: {Id, Name} matching real service
+
+  UploadDocument.ashx(.cs)      Generic HTTP Handler for PDF uploads.
+                                 Receives multipart/form-data.
+                                 Returns { guid } or { error }.
+                                 [WebMethod] cannot handle file uploads.
+
+  DownloadDocument.ashx(.cs)    Generic HTTP Handler for document downloads.
+                                 Mirrors GetXMFaxReceipt pattern:
+                                 blobName → stream → Content-Disposition attachment.
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 3.  HOW THE DATA FLOWS END-TO-END
+═══════════════════════════════════════════════════════════════════════════════
+
+  Page Load:
+  ──────────
+  1. Page_Load → LoadFirstPage()
+  2. Calls FakePoaFormsService.GetAllForms(pageSize:10, page:1)
+     → returns 10 records + totalCount (e.g. 12)
+  3. Calls each lookup method (GetServiceTypes, GetMailCenters, etc.)
+  4. Serializes:
+     - window.poaInitialData = { items:[...10...], totalCount:12, ... }
+     - window.poaLookups = { serviceTypes:[...], states:[...], ... }
+     - HiddenGridData.Value = same JSON (belt-and-suspenders)
+  5. JS reads HiddenGridData first, falls back to window.poaInitialData
+  6. grid.loadData(initial.items) → grid renders page 1
+  7. grid._serverTotalCount = 12 → pager shows "1 of 2"
+
+  Page Navigation (user clicks page 2):
+  ──────────────────────────────────────
+  1. grid.setPage(2) → grid._apply() → detects dataLoader is configured
+  2. dataLoader fires:
+     fetch('Default.aspx/GetPage', { page:2, pageSize:10, ... })
+  3. WebMethod GetPage returns { items:[...2 records...], totalCount:12 }
+  4. grid._serverTotalCount = 12, renders the 2 rows
+
+  Search / Filter / Sort:
+  ───────────────────────
+  Same as page navigation — the grid calls _apply() which calls dataLoader
+  with the current search/filter/sort params.  The server does the filtering
+  (the FakePoaFormsService supports search/filterState/sortKey/sortDir).
+
+  Refresh:
+  ────────
+  grid.resetState() clears search, filter, sort, expanded rows, page → 1,
+  resets the DOM toolbar controls, then fires _apply() → dataLoader page 1.
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 4.  COMBO BOX / LOOKUP SYSTEM
+═══════════════════════════════════════════════════════════════════════════════
+
+  The combo boxes (select dropdowns in the edit form) are populated from lookup
+  tables.  Each lookup returns LookupItem { Id, Name } from the service.
+
+  POC mapping (simulated):
+  ────────────────────────
+    FakePoaFormsService.GetServiceTypes()    → [{Id:1, Name:"Full"}, ...]
+    FakePoaFormsService.GetPoaFormTypes()    → [{Id:1, Name:"POA"}, ...]
+    FakePoaFormsService.GetFormUses()        → [{Id:1, Name:"Filing"}, ...]
+    FakePoaFormsService.GetPoaTypes()        → [{Id:1, Name:"Tax"}, ...]
+    FakePoaFormsService.GetSignatureTypes()  → [{Id:1, Name:"Digital"}, ...]
+    FakePoaFormsService.GetOnlineRequirements() → [{Id:1, Name:"None"}, ...]
+    FakePoaFormsService.GetReturnTypes()     → [{Id:1, Name:"Mail"}, ...]
+    FakePoaFormsService.GetMailCenters()     → [{Id:3, Name:"Mail Center 3"}, ...]
+    FakePoaFormsService.GetStates()          → [{Id:"TX", Name:"TX"}, ...]
+
+  Real service mapping (your PoaFormsRepository):
+  ────────────────────────────────────────────────
+    GetServiceTypes()       → service_type            (service_type_id / description)
+    GetPoaFormTypes()       → poa_form_types          (poa_form_type_id / description)
+    GetFormUses()           → poa_form_uses           (poa_form_use_id / description)
+    GetPoaTypes()           → poa_types               (poa_type_id / description)
+    GetSignatureTypes()     → poa_signature_types     (poa_signature_type_id / description)
+    GetOnlineRequirements() → poa_online_requirements (poa_online_requirement_id / desc)
+    GetReturnTypes()        → poa_return_types        (poa_return_type_id / description)
+    GetMailCenters()        → mail_centers            (mail_center_id / description)
+    GetStates()             → state_codes             (code / state)
+
+  How the combo value reaches EF:
+  ───────────────────────────────
+    1. Combo option has { label:"Full", value:1 }
+    2. User selects "Full" → record stores ServiceType = 1
+    3. onSave builds DTO: ServiceTypeId = parseInt(record.ServiceType) = 1
+    4. DTO sent as JSON: { "form": { "ServiceTypeId": 1, ... } }
+    5. ASP.NET binds to PoaFormDto.ServiceTypeId = 1
+    6. Insert: entity.service_type_id = form.ServiceTypeId   (direct FK)
+
+  State is a special case:
+  ────────────────────────
+    State uses the code string ("TX") as both the combo value and the grid
+    column display.  The DTO sends State = "TX" and the server resolves it:
+      entity.state_id = _context.state_codes
+          .Where(s => s.abbreviation == form.State)
+          .Select(s => (int?)s.id).FirstOrDefault();
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 5.  WIRING THE REAL PoaFormsService
+═══════════════════════════════════════════════════════════════════════════════
+
+  Step 1 — Resolve the service (static WebMethods cannot use injection):
+  ───────────────────────────────────────────────────────────────────────
+    var svc = NinjectKernelProvider.Kernel.Get<IPoaFormsService>();
+
+    (Use whatever accessor your C3 app exposes for the kernel.)
+
+  Step 2 — Replace lookup calls in LoadFirstPage:
+  ────────────────────────────────────────────────
+    Change:  FakePoaFormsService.GetServiceTypes()
+    To:      svc.GetServiceTypes()
+
+    (Repeat for each lookup.  The ToOptions helper stays the same.)
+
+  Step 3 — Replace grid data call in LoadFirstPage and GetPage:
+  ─────────────────────────────────────────────────────────────
+    Change:  FakePoaFormsService.GetAllForms(...)
+    To:      svc.GetAllForms(itemsPerPage, pageNumber, new PoaFormFilter(), out totalCount)
+
+    The FlattenRecords lambda maps the real entity to the JS property names.
+    Adjust the property paths if your real entity uses navigation properties:
+      State = x.State?.Abbreviation   (instead of x.State)
+      etc.
+
+  Step 4 — Replace InsertForm / UpdateForm stubs:
+  ────────────────────────────────────────────────
+    var entity = new poa_forms
+    {
+        description             = form.Description,
+        active                  = form.Active,
+        mail_center_id          = form.MailCenterId,
+        service_type_id         = form.ServiceTypeId,
+        poa_form_type_id        = form.PoaFormTypeId,
+        form_use_id             = form.FormUseId,
+        poa_type_id             = form.PoaTypeId,
+        signature_type_id       = form.SignatureTypeId,
+        return_type_id          = form.ReturnTypeId,
+        online_requirement_id   = form.OnlineRequirementId,
+        state_id                = _context.state_codes
+                                    .Where(s => s.abbreviation == form.State)
+                                    .Select(s => (int?)s.id).FirstOrDefault(),
+        document_reference      = form.DocumentReference,
+        file_name               = form.FileName,
+        file_extension          = form.FileExtension,
+        last_updated            = DateTime.UtcNow
+    };
+    _context.poa_forms.Add(entity);
+    _context.SaveChanges();
+    return new { Id = entity.id,
+                 LastUpdated = entity.last_updated.Value.ToString("MM/dd/yyyy hh:mm tt") };
+
+  Step 5 — Replace DeleteForm:
+  ────────────────────────────
+    svc.DeleteForm(Id);
+    return new { Success = true };
+
+  Step 6 — Delete FakePoaFormsService, PoaFormModel, LookupItem:
+  ──────────────────────────────────────────────────────────────
+    These are POC stubs.  Your real service layer already has equivalent classes.
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 6.  INSERT / UPDATE FLOW
+═══════════════════════════════════════════════════════════════════════════════
+
+  Insert (new record):
+  ────────────────────
+  1. User clicks "+ Add New Template"
+  2. Add panel opens with all edit sections
+  3. User fills fields and uploads PDF
+  4. Upload widget validates: extension, MIME, size (client-side)
+  5. User clicks "Upload to Storage" → XHR to UploadDocument.ashx
+  6. Handler returns { guid } → stored in _newBuffer.DocumentReference
+  7. Save button unlocks (was dimmed until guid confirmed)
+  8. User clicks "Save New Template"
+  9. _collectFormValues reads all inputs
+  10. _finaliseInsert re-applies GUID + FileName from _uploadState
+      (because _collectFormValues overwrites readonly inputs with "")
+  11. onSave fires → builds clean DTO with FK ids
+  12. callPageMethod('InsertForm', { form: dto })
+  13. Server returns { Id, LastUpdated }
+  14. grid.updateRecord patches the in-memory record
+  15. Row appears in the grid
+
+  Update (existing record):
+  ─────────────────────────
+  1. User clicks "Edit" action button → expandRowForEdit
+  2. Detail panel opens in EDIT mode (all fields are inputs)
+  3. User modifies fields → clicks "Save"
+  4. _collectFormValues + onSave + callPageMethod('UpdateForm', { form: dto })
+  5. Server returns { LastUpdated }
+  6. grid.updateRecord patches LastUpdated column
+
+  Note: Clicking the ▶ arrow opens in READ-ONLY view mode.
+  Only the Edit action button opens in edit mode.
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 7.  DELETE FLOW
+═══════════════════════════════════════════════════════════════════════════════
+
+  1. User clicks "Delete" action button
+  2. Browser confirm dialog
+  3. callPageMethod('DeleteForm', { Id: record.Id })
+  4. Server confirms { Success: true }
+  5. grid.removeRecord(agId) — removes from in-memory slice
+     (does NOT trigger dataLoader — avoids server re-fetch)
+  6. _serverTotalCount decremented
+  7. Title, body, and pager re-rendered
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 8.  EXTRACTION FLOW (HANGFIRE + POLLING)
+═══════════════════════════════════════════════════════════════════════════════
+
+  Phase 1 — Trigger (synchronous, ~200ms):
+  ─────────────────────────────────────────
+  1. User clicks "Extract" action button
+  2. callPageMethod('TriggerExtraction', { Id })
+  3. Server sets ExtractionStatus = "In Progress" in DB
+  4. Server enqueues Hangfire job: BackgroundJob.Enqueue<IPoaExtractionJob>(...)
+  5. Returns { JobId, Status: "In Progress" }
+  6. grid.updateRecord flips badge to "In Progress"
+  7. startExtractionPolling begins
+
+  Phase 2 — Background Job (async, seconds to minutes):
+  ─────────────────────────────────────────────────────
+  Hangfire picks up the job and runs:
+    a. Fetch PDF from blob storage
+    b. Send to Document Analysis Service (Aspose / Azure DI)
+    c. Extract text, coordinates, pages, bounding boxes
+    d. Normalize → TemplateStructure
+    e. Save results to DB/blob
+    f. Update ExtractionStatus = "Completed" (or "Error")
+
+  Phase 3 — Polling:
+  ──────────────────
+  startExtractionPolling calls GetExtractionStatus every 5 seconds:
+    - Max 24 polls = 2 minutes timeout
+    - Each response updates the badge in real time
+    - Stops when status is "Completed" or "Error"
+
+  POC stub: GetExtractionStatus always returns "Completed" immediately
+  so you can see the full badge flip cycle during testing.
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 9.  DOCUMENT UPLOAD & DOWNLOAD
+═══════════════════════════════════════════════════════════════════════════════
+
+  Upload:
+  ───────
+  • Uses UploadDocument.ashx (Generic Handler), NOT [WebMethod]
+  • [WebMethod] requires Content-Type: application/json; file uploads use
+    multipart/form-data which ASP.NET routes away from WebMethods entirely
+  • Handler reads Request.Files["file"] → validates extension → returns { guid }
+  • Client validates in real time: extension, MIME type cross-check, file size
+  • Config: uploadMaxSizeMb (default 20), uploadAllowedExtensions (default ['.pdf'])
+  • Save button is LOCKED (dimmed, not-allowed cursor) until a valid guid exists
+  • Clicking Save without uploading shows a context-specific error message
+
+  Download:
+  ─────────
+  • Uses DownloadDocument.ashx (Generic Handler)
+  • Mirrors the existing GetXMFaxReceipt pattern:
+    blobName + fileName + fileExt from query string
+    → GetDocumentAsync → ConvertStreamToByteArray → StreamFileToResponse
+  • Uses Response.Flush() + ApplicationInstance.CompleteRequest()
+    (NOT Response.End() which throws headers-already-sent exception)
+  • Download triggered via hidden iframe so the page doesn't navigate away
+
+  Real wiring for Upload:
+  ───────────────────────
+    var result = await BlobDocumentService.UploadAsync(
+        file.InputStream,             // Stream (no temp file)
+        file.FileName,                // string
+        (long?)file.ContentLength     // long?
+    );
+    return new { guid = result.BlobName };
+
+  Real wiring for Download:
+  ─────────────────────────
+    var container = FaxConfiguration.GetAzureDocumentContainerName();
+    var result = await faxSender.GetDocumentAsync(blobName, container);
+    byte[] bytes = await ConvertStreamToByteArrayAsync(result);
+    StreamFileToResponse(context, bytes, fileExt, fileName);
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 10.  SERVER-SIDE PAGINATION
+═══════════════════════════════════════════════════════════════════════════════
+
+  The grid supports two modes:
+
+  Client-side (no dataLoader configured):
+    - loadData receives ALL records at once
+    - Grid handles paging/search/sort/filter locally in JS
+    - Good for < 500 records
+
+  Server-side (dataLoader configured):
+    - loadData receives only the first page
+    - Every page/search/sort/filter calls dataLoader → GetPage WebMethod
+    - GetPage calls the repository with the same Skip/Take pattern
+    - _serverTotalCount tracks the real total from the server
+    - updateRecord and removeRecord skip dataLoader (re-render locally)
+    - Good for 500+ records, scales to tens of thousands
+
+  In the POC, server-side mode is active because dataLoader is configured.
+
+  Your real repository already does server-side pagination:
+    query.Count()                             → totalCount
+    query.OrderBy(...).Skip(...).Take(...)    → page slice
+
+  This maps directly to the GetPage WebMethod parameters.
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 11.  ITERATION HISTORY
+═══════════════════════════════════════════════════════════════════════════════
+
+  Iteration 1  — Full POC with server-side actions, extraction polling,
+                  WebMethods for all operations, callPageMethod helper,
+                  parameter case-sensitivity fix (int id → int Id),
+                  DTO parameter wrapping ({ form: dto })
+
+  Iteration 2  — Document GUID and filename preserved on insert
+                  (_finaliseInsert re-applies from _uploadState,
+                  _doUpload stores FileName + FileExtension)
+
+  Iteration 3  — Combo boxes matched to real PoaFormsService contract:
+                  all lookups (service types, form types, states, mail centers)
+                  wired via FakePoaFormsService methods mirroring real service
+                  signatures; MailCenter changed from number to combo;
+                  FormType renamed to PoaFormType; server injects lookups as
+                  window.poaLookups via RegisterStartupScript
+
+═══════════════════════════════════════════════════════════════════════════════
+ END OF DOCUMENT
+═══════════════════════════════════════════════════════════════════════════════

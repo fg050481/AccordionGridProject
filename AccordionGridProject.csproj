@@ -71,6 +71,7 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="Default.aspx" />
+    <Content Include="Readme\LookupImplementation.txt" />
     <Content Include="Scripts\AccordionGrid.js" />
     <Content Include="Web.config" />
   </ItemGroup>
