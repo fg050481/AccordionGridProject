@@ -141,45 +141,40 @@
             }
         ];
 
-        /* ── Lookup tables (id ↔ label) ───────────────────────────────
-           In production these come from the server (the same lookup
-           tables that populate your combo boxes), serialized into
-           window.poaLookups by the code-behind.  For the POC they are
-           defined inline here.  The select VALUE is the FK id; the
-           LABEL is what the user sees.  This means the record stores
-           the id (e.g. ServiceType: 1) and the DTO sends it straight
-           to EF as the foreign key — no string lookup needed.
-        ──────────────────────────────────────────────────────────── */
-        var LOOKUPS = (window.poaLookups) || {
-            // These mirror the real PoaFormsService lookup methods.  Each is the
-            // same { label, value } shape the combo boxes consume — value is the
-            // FK id returned by the service (LookupItem.Id), label is LookupItem.Name.
-            //
-            //   serviceTypes       ← GetServiceTypes()       (service_type_id)
-            //   poaFormTypes       ← GetPoaFormTypes()       (poa_form_type_id)
-            //   formUses           ← GetFormUses()           (poa_form_use_id)
-            //   poaTypes           ← GetPoaTypes()           (poa_type_id)
-            //   signatureTypes     ← GetSignatureTypes()     (poa_signature_type_id)
-            //   onlineRequirements ← GetOnlineRequirements() (poa_online_requirement_id)
-            //   returnTypes        ← GetReturnTypes()        (poa_return_type_id)
-            //   states             ← GetStates()             (code, e.g. "TX")
-            //   mailCenters        ← GetMailCenters()        (mail_center_id)
-            serviceTypes: [{ label: 'Full', value: 1 }, { label: 'Partial', value: 2 }, { label: 'Limited', value: 3 }],
-            poaFormTypes: [{ label: 'POA', value: 1 }, { label: '2848', value: 2 }, { label: '8821', value: 3 }],
-            formUses: [{ label: 'Filing', value: 1 }, { label: 'Representation', value: 2 }, { label: 'Both', value: 3 }],
-            poaTypes: [{ label: 'Tax', value: 1 }, { label: 'Financial', value: 2 }, { label: 'Medical', value: 3 }],
-            signatureTypes: [{ label: 'Digital', value: 1 }, { label: 'Electronic', value: 2 }, { label: 'Wet', value: 3 }],
-            onlineRequirements: [{ label: 'None', value: 1 }, { label: 'Required', value: 2 }, { label: 'Optional', value: 3 }],
-            returnTypes: [{ label: 'Mail', value: 1 }, { label: 'Fax', value: 2 }, { label: 'E-File', value: 3 }, { label: 'Portal', value: 4 }],
-            mailCenters: [{ label: 'Mail Center 3', value: 3 }, { label: 'Mail Center 5', value: 5 }, { label: 'Mail Center 6', value: 6 },
-            { label: 'Mail Center 7', value: 7 }, { label: 'Mail Center 8', value: 8 }, { label: 'Mail Center 9', value: 9 },
-            { label: 'Mail Center 10', value: 10 }, { label: 'Mail Center 11', value: 11 }, { label: 'Mail Center 12', value: 12 }],
-            // GetStates() returns code as Id and state name as Name. We use the
-            // code (TX, CA…) as the value because it is shown in the grid column
-            // and used as the filter value.
-            states: 'AL,AK,AZ,AR,CA,CO,CT,DE,FL,GA,HI,ID,IL,IN,IA,KS,KY,LA,ME,MD,MA,MI,MN,MS,MO,MT,NE,NV,NH,NJ,NM,NY,NC,ND,OH,OK,OR,PA,RI,SC,SD,TN,TX,UT,VT,VA,WA,WV,WI,WY'
-                .split(',').map(function (s) { return { label: s, value: s }; })
-        };
+        /* ── Lookup tables (injected by code-behind via RegisterStartupScript) ──
+      window.poaLookups is set by LoadFirstPage() in the code-behind.
+      Each property is an array of { label, value } objects where value
+      is the FK id from the lookup table and label is the display text.
+      No hardcoded fallback — the server is the single source of truth.
+   ──────────────────────────────────────────────────────────────────── */
+        var LOOKUPS = window.poaLookups;
+
+        if (!LOOKUPS) {
+            log('err', 'window.poaLookups is not defined — lookups were not injected by the code-behind. ' +
+                'Check LoadFirstPage() and verify RegisterStartupScript for "poaLookups" is executing.');
+        }
+
+        /* ── Edit fields shown in the expanded accordion panel ─────── */
+        var editFields = [
+            { key: 'Description', label: 'Description', type: 'text', required: true, placeholder: 'Enter description' },
+            { key: 'State', label: 'State', type: 'select', options: LOOKUPS.states },
+            { key: 'MailCenterId', label: 'Mail Center', type: 'select', options: LOOKUPS.mailCenters },
+            { key: 'Active', label: 'Active', type: 'checkbox' },
+
+            { key: 'ServiceType', label: 'Service Type', type: 'select', options: LOOKUPS.serviceTypes },
+            { key: 'PoaFormType', label: 'Form Type', type: 'select', options: LOOKUPS.poaFormTypes },
+            { key: 'FormUse', label: 'Form Use', type: 'select', options: LOOKUPS.formUses },
+            { key: 'PoaType', label: 'POA Type', type: 'select', options: LOOKUPS.poaTypes },
+
+            { key: 'SignatureType', label: 'Signature Type', type: 'select', options: LOOKUPS.signatureTypes },
+            { key: 'ReturnType', label: 'Return Type', type: 'select', options: LOOKUPS.returnTypes },
+            { key: 'OnlineRequirement', label: 'Online Requirement', type: 'select', options: LOOKUPS.onlineRequirements },
+
+            { key: 'FileName', label: 'File Name', type: 'text', readOnly: true },
+            { key: 'DocumentReference', label: 'Document Reference', type: 'text', readOnly: true },
+            { key: 'Notes', label: 'Notes', type: 'textarea', fullWidth: true, placeholder: 'Optional notes…' }
+        ];
+
 
         /* ── Edit fields shown in the expanded accordion panel ─────── */
         var editFields = [

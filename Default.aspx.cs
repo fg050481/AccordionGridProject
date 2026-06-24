@@ -76,9 +76,13 @@ namespace AccordionGridProject
                 StringEscapeHandling = StringEscapeHandling.EscapeHtml
             });
 
+            // ── Inject into the page ──────────────────────────────────────────
+            // RegisterStartupScript places a <script> block just before </form>.
+            // The JS on the page reads window.poaLookups after this runs.
             ClientScript.RegisterStartupScript(
-                GetType(), "poaLookups",
-                "window.poaLookups = " + lookupsJson + ";",
+                type: GetType(),
+                key: "poaLookups",
+                script: "window.poaLookups = " + lookupsJson + ";",
                 addScriptTags: true);
         }
 
