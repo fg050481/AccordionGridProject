@@ -74,6 +74,7 @@
     <Content Include="Readme\LookupImplementation.txt" />
     <Content Include="Scripts\AccordionGrid.js" />
     <Content Include="Web.config" />
+    <Content Include="_dev-tracking\POA-Grid-AccordionGrid-ChangeLog-2026-06-24.txt" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Default.aspx.cs">

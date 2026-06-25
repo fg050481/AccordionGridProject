@@ -1,0 +1,179 @@
+﻿═══════════════════════════════════════════════════════════════════════════════
+ POA FORM MANAGEMENT — ACCORDION GRID
+ Commit History
+═══════════════════════════════════════════════════════════════════════════════
+
+
+───────────────────────────────────────────────────────────────────────────────
+ ITERATION 1 — Initial build + server-side actions + extraction polling
+───────────────────────────────────────────────────────────────────────────────
+
+feat(poa-grid): iteration 1 — full POC with server-side actions and extraction polling
+
+WebMethods (Default.aspx.cs):
+- Add InsertForm, UpdateForm, DeleteForm with POC stubs and real implementation comments
+- Add TriggerExtraction returning JobId + "In Progress" status
+- Add GetExtractionStatus polled every 5s until Completed or Error
+- Add TriggerMapping returning status + RedirectUrl placeholder
+- Add GenerateDocument returning success + RedirectUrl placeholder
+- Add PoaFormDto to receive Insert/Update payloads from the grid
+- Fix all single-Id WebMethod params from int id → int Id (case-sensitive JSON binding)
+
+Action handlers (Default.aspx):
+- Wire all action buttons to real callPageMethod calls (no more stubs)
+- Fix onSave to build clean PoaFormDto-shaped payload (exclude internal grid keys)
+- Wrap DTO payloads as { form: dto } to match ASP.NET WebMethod parameter binding
+- Coerce Active checkbox value to bool (handles true / "true" / "on")
+- Delete only removes row after server confirms Success: true
+- Insert updates in-memory record with server-returned Id and LastUpdated
+- Update patches LastUpdated from server response
+- Add startExtractionPolling: polls GetExtractionStatus every 5s, max 2 min
+- Add callPageMethod helper: unwraps ASP.NET { d: "json-string" } double-wrap
+
+Grid (AccordionGrid.js):
+- Fix updateRecord to skip dataLoader in server-side mode (re-render locally)
+- Fix removeRecord to skip dataLoader, decrement _serverTotalCount, re-render
+
+
+───────────────────────────────────────────────────────────────────────────────
+ ITERATION 2 — Document GUID and filename lost on insert
+───────────────────────────────────────────────────────────────────────────────
+
+fix(accordion-grid): iteration 2 — document GUID and filename lost on new template insert
+
+Root cause: _collectFormValues overwrote DocumentReference and FileName in
+_newBuffer with empty strings from the readonly DOM inputs, since the upload
+widget never writes back to those hidden fields.
+
+- Re-apply GUID, FileName and FileExtension from _uploadState into _newBuffer
+  inside _finaliseInsert after _collectFormValues runs
+- Store FileName and FileExtension into _newBuffer on upload success in _doUpload
+- Add FileExtension to PoaFormDto so all three document fields reach the server
+- Add FileExtension to the dto object built in onSave to match PoaFormDto contract
+
+
+───────────────────────────────────────────────────────────────────────────────
+ ITERATION 3 — Wire combo boxes to real PoaFormsService lookup contract
+───────────────────────────────────────────────────────────────────────────────
+
+feat(poa-grid): iteration 3 — wire combo boxes to match real PoaFormsService lookup contract
+
+Lookups:
+- Add FakePoaFormsService lookup methods mirroring real service signatures:
+  GetServiceTypes, GetPoaFormTypes, GetFormUses, GetPoaTypes, GetSignatureTypes,
+  GetOnlineRequirements, GetReturnTypes, GetStates, GetMailCenters
+- Add LookupItem class (Id as object to support int FKs and string state codes)
+- Add ToOptions helper mapping LookupItem {Id,Name} → grid option {value,label}
+- Serialize all lookups into window.poaLookups via RegisterStartupScript
+- JS LOOKUPS reads window.poaLookups first, falls back to inline data
+
+Combo boxes:
+- MailCenterId changed from number input to select combo (GetMailCenters)
+- FormType renamed to PoaFormType matching GetPoaFormTypes service method
+- All select options now carry FK id as value, label as display text
+- State keeps abbreviation code as value (grid column + filter friendly)
+
+DTO + Flattener:
+- PoaFormDto: FormTypeId → PoaFormTypeId, all select fields are int? FK ids
+- FlattenRecords emits FK ids for select fields so edit dropdowns pre-select by id
+- PoaFormModel computed id getters updated (PoaFormTypeId)
+- InsertForm comment block shows exact EF entity mapping with direct FK assignment
+
+
+───────────────────────────────────────────────────────────────────────────────
+ ITERATION 3 — FIX — Remove hardcoded lookups, isolate into dedicated method
+───────────────────────────────────────────────────────────────────────────────
+
+fix(lookups): remove hardcoded fallback, isolate lookup loading into dedicated method
+
+- Extract LoadLookups() from LoadFirstPage() for easier debugging and swapping
+- Build each lookup as a plain hardcoded C# array (no service calls, no helpers)
+- Remove || fallback from window.poaLookups in ASPX — server is single source of truth
+- Log clear error if window.poaLookups is undefined after page load
+
+
+───────────────────────────────────────────────────────────────────────────────
+ ITERATION 3 — FIX — Add HiddenLookups hidden field (reliable delivery)
+───────────────────────────────────────────────────────────────────────────────
+
+fix(lookups): add HiddenLookups hidden field as primary lookup delivery mechanism
+
+Root cause: window.poaLookups injected by RegisterStartupScript was not always
+available when the ASPX JS ran, depending on Master Page script manager timing.
+
+- Add <asp:HiddenField ID="HiddenLookups" ClientIDMode="Static" Value="{}">
+  to ASPX alongside existing HiddenGridData (same reliable pattern)
+- Assign HiddenLookups.Value = lookupsJson in LoadLookups() code-behind
+- JS reads HiddenLookups field first (primary), window.poaLookups second (fallback)
+- Event log reports which source was used on every page load
+
+
+───────────────────────────────────────────────────────────────────────────────
+ FULL PROJECT COMMIT — AccordionGrid POC complete
+───────────────────────────────────────────────────────────────────────────────
+
+feat(poa-grid): full AccordionGrid POC — zero-dependency grid with complete POA workflow
+
+Component (AccordionGrid.js):
+- Enterprise accordion+grid with embedded CSS, zero external dependencies
+- Configurable columns, edit fields, sections, action buttons, badges
+- Read-only expand on arrow click, edit mode on Edit button only
+- Server-side pagination via dataLoader (skips re-fetch on updateRecord/removeRecord)
+- resetState() clears search, filter, sort, open rows, resets DOM controls
+- Refresh button built into title bar (showRefreshButton, default true)
+- PDF upload widget: configurable max size and allowed extensions, real-time
+  validation (extension + MIME + size), progress bar, GUID gate blocks insert
+- Field labels bold/dark, values normal weight for clear visual hierarchy
+- Fix: Add New button listener lost on every _apply() call
+- Fix: setPage/setPageSize call _apply() so dataLoader fires on navigation
+- Fix: _serverTotalCount used by pager in server-side mode
+- Fix: document GUID and filename re-applied from _uploadState in _finaliseInsert
+- Fix: ag-shake animation on blocked Save, Save button dimmed until GUID confirmed
+
+POC project (PoaGridTestApp):
+- ASP.NET WebForms 4.8, no Master Page, single Default.aspx page
+- FakePoaFormsService with 12 seed records + all 9 lookup methods mirroring
+  real PoaFormsService signatures (GetServiceTypes, GetPoaFormTypes, GetFormUses,
+  GetPoaTypes, GetSignatureTypes, GetOnlineRequirements, GetReturnTypes,
+  GetStates, GetMailCenters)
+- Server-side pagination: LoadFirstPage sends page 1 + totalCount; GetPage
+  WebMethod handles all subsequent page/search/sort/filter via dataLoader
+- HiddenGridData + HiddenLookups hidden fields as primary data delivery
+  (reliable across Master Pages, ScriptManager, async postbacks)
+  RegisterStartupScript kept as secondary fallback for both
+- window.poaLookups read from HiddenLookups first, no hardcoded fallback
+- All combo boxes carry FK int ids as value, labels as display text
+- MailCenterId changed from number input to select combo
+- FormType renamed PoaFormType matching GetPoaFormTypes service method
+- PoaFormModel computed FK id getters (PoaFormTypeId, ServiceTypeId, etc.)
+- FlattenRecords emits FK ids for select fields so edit dropdowns pre-select
+- Last Updated column (DateTime?, formatted MM/dd/yyyy hh:mm tt, sortable)
+
+WebMethods (all with POC stubs + real implementation comments):
+- GetPage: server-side pagination with search, filter, sort, sort direction
+- InsertForm / UpdateForm: PoaFormDto with int? FK ids, returns LastUpdated
+- DeleteForm: confirms Success before grid removes row
+- TriggerExtraction: returns JobId + "In Progress", Hangfire job comment block
+- GetExtractionStatus: polled every 5s by browser, max 24 polls / 2 min
+- TriggerMapping: returns Status + RedirectUrl placeholder
+- GenerateDocument: returns Success + RedirectUrl placeholder
+- Fix: int id → int Id on all single-param WebMethods (case-sensitive JSON binding)
+- Fix: DTO wrapped as { form: dto } to match ASP.NET parameter binding
+
+Handlers:
+- UploadDocument.ashx: multipart file upload (WebMethod cannot handle this),
+  server-side extension validation, returns { guid } or { error }
+- DownloadDocument.ashx: mirrors GetXMFaxReceipt pattern, streams blob as
+  file attachment, fix Response.End() → CompleteRequest() (headers exception)
+
+Action wiring:
+- Extract: calls TriggerExtraction → badge flips → startExtractionPolling
+- Map: calls TriggerMapping → badge updates inline
+- Generate: calls GenerateDocument → RedirectUrl hook
+- Delete: server confirms before grid.removeRecord()
+- Insert/Update onSave: clean PoaFormDto built from e.record, Active coerced
+  to bool, FK ids parsed to int, wrapped as { form: dto }
+
+═══════════════════════════════════════════════════════════════════════════════
+ END OF COMMIT HISTORY
+═══════════════════════════════════════════════════════════════════════════════
