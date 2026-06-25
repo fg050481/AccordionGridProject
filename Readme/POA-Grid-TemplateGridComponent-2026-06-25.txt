@@ -1,0 +1,649 @@
+﻿═══════════════════════════════════════════════════════════════════════════════
+ POA FORM MANAGEMENT — TEMPLATE GRID COMPONENT
+ Technical Reference
+ Date: 2026-06-25
+═══════════════════════════════════════════════════════════════════════════════
+
+
+TABLE OF CONTENTS
+─────────────────
+  1.  Overview
+  2.  File Structure
+  3.  Grid Columns
+  4.  Edit Form Sections & Fields
+  5.  Action Buttons
+  6.  Lookup System (Combo Boxes)
+  7.  Data Loading — Hidden Fields + RegisterStartupScript
+  8.  Server-Side Pagination
+  9.  PDF Document Upload
+  10. Action Button Wiring (WebMethods)
+  11. DTO & Data Contract
+  12. Read-Only vs Edit Mode
+  13. Refresh & Reset State
+  14. Key Configuration Options
+  15. AccordionGrid.js Public API
+  16. Switching POC to Production
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 1.  OVERVIEW
+═══════════════════════════════════════════════════════════════════════════════
+
+The POA Template Grid is built on the AccordionGrid.js component — a reusable,
+zero-dependency accordion + data grid written in vanilla JavaScript with
+embedded CSS. It renders POA form templates as collapsible rows, supports
+inline editing through accordion expansion, server-side pagination, search,
+filter, sort, and PDF document upload to blob storage.
+
+Key facts:
+  - No jQuery, Bootstrap, Telerik, Kendo, or any external library
+  - Single JS file (AccordionGrid.js) with all CSS embedded inside it
+  - Dropped into any ASP.NET WebForms 4.8 page with one <script> tag
+  - All domain configuration (columns, fields, actions) is in the ASPX
+  - AccordionGrid.js knows nothing about POA forms or ASP.NET
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 2.  FILE STRUCTURE
+═══════════════════════════════════════════════════════════════════════════════
+
+  Scripts/
+  └── AccordionGrid.js          Core component — CSS + JS, ~2300 lines
+
+  Default.aspx                  Page markup + full grid configuration:
+                                 - Hidden fields (HiddenGridData, HiddenLookups)
+                                 - Column definitions
+                                 - Edit field definitions
+                                 - Edit section groupings
+                                 - Action button definitions
+                                 - Grid options (pageSize, search, filter, upload)
+                                 - All callback handlers (onSave, onDelete,
+                                   onActionClick, dataLoader, onUploadDocument)
+                                 - callPageMethod helper
+                                 - startExtractionPolling function
+                                 - Data loading from hidden fields
+
+  Default.aspx.cs               Code-behind:
+                                 - Page_Load → LoadFirstPage + LoadLookups
+                                 - WebMethods: GetPage, InsertForm, UpdateForm,
+                                   DeleteForm, TriggerExtraction,
+                                   GetExtractionStatus, TriggerMapping,
+                                   GenerateDocument
+                                 - FlattenRecords (model → JS JSON shape)
+                                 - PoaFormDto (receives JS payload)
+                                 - PoaFormModel + computed FK id getters
+                                 - FakePoaFormsService (seed data + lookups)
+                                 - LookupItem class
+
+  UploadDocument.ashx(.cs)      Generic Handler — PDF upload to blob storage
+  DownloadDocument.ashx(.cs)    Generic Handler — blob download as attachment
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 3.  GRID COLUMNS
+═══════════════════════════════════════════════════════════════════════════════
+
+  These columns appear in the collapsed row view.
+
+  Column          Key                Width     Sortable  Rendering
+  ─────────────────────────────────────────────────────────────────────────────
+  Description     Description        flex:1    Yes       Plain text
+  State           State              70px      Yes       Plain text (abbreviation)
+  Extraction      ExtractionStatus   130px     Yes       Color badge (see below)
+  Mapping         MappingStatus      120px     Yes       Color badge (see below)
+  Last Updated    LastUpdated        150px     Yes       Formatted date or "—"
+  Active          Active             70px      No        Green "Yes" / Red "No" badge
+
+  Badge color map — Extraction:
+  ──────────────────────────────
+    "Not Started"  →  gray    (default)
+    "In Progress"  →  blue    (info)
+    "Completed"    →  green   (success)
+    "Error"        →  red     (danger)
+
+  Badge color map — Mapping:
+  ───────────────────────────
+    "Not Mapped"   →  gray    (default)
+    "Partial"      →  blue    (info)
+    "Mapped"       →  green   (success)
+
+  LastUpdated format:
+  ───────────────────
+    Set by FlattenRecords in the code-behind:
+      x.LastUpdated.Value.ToString("MM/dd/yyyy hh:mm tt")
+    Null values render as "—" in the grid.
+    Updated by the server on every Insert and Update (DateTime.UtcNow).
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 4.  EDIT FORM SECTIONS & FIELDS
+═══════════════════════════════════════════════════════════════════════════════
+
+  When a row is expanded in edit mode, the detail panel shows fields grouped
+  into sections with green header bars.
+
+  ┌─ Template Info ──────────────────────────────────────────────────────────┐
+  │  Description (text, required)                                            │
+  │  State (select ← GetStates)          Mail Center (select ← GetMailCenters)│
+  │  Active (checkbox)                                                       │
+  └──────────────────────────────────────────────────────────────────────────┘
+
+  ┌─ Classification ─────────────────────────────────────────────────────────┐
+  │  Service Type (select ← GetServiceTypes)                                 │
+  │  Form Type    (select ← GetPoaFormTypes)                                 │
+  │  Form Use     (select ← GetFormUses)                                     │
+  │  POA Type     (select ← GetPoaTypes)                                     │
+  └──────────────────────────────────────────────────────────────────────────┘
+
+  ┌─ Processing Rules ───────────────────────────────────────────────────────┐
+  │  Signature Type     (select ← GetSignatureTypes)                        │
+  │  Return Type        (select ← GetReturnTypes)                           │
+  │  Online Requirement (select ← GetOnlineRequirements)                    │
+  └──────────────────────────────────────────────────────────────────────────┘
+
+  ┌─ Document ───────────────────────────────────────────────────────────────┐
+  │  File Name          (text, read-only — set by upload)                   │
+  │  Document Reference (text, read-only — GUID from blob storage)          │
+  │  [PDF upload widget — Choose PDF / Upload to Storage / progress bar]    │
+  └──────────────────────────────────────────────────────────────────────────┘
+
+  ┌─ Notes ──────────────────────────────────────────────────────────────────┐
+  │  Notes (textarea, full-width, optional)                                  │
+  └──────────────────────────────────────────────────────────────────────────┘
+
+  Field key naming convention:
+  ──────────────────────────────
+    All select fields use the Id suffix as the key name:
+      ServiceTypeId, PoaFormTypeId, FormUseId, PoaTypeId,
+      SignatureTypeId, ReturnTypeId, OnlineRequirementId
+
+    This means e.record stores the FK integer id directly under the same name
+    as the DTO property — no translation needed in onSave:
+      e.record.ServiceTypeId → dto.ServiceTypeId  (direct assignment)
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 5.  ACTION BUTTONS
+═══════════════════════════════════════════════════════════════════════════════
+
+  Buttons appear in the Actions column of each row.
+
+  Button      CSS Class         Visible when                  What it does
+  ────────────────────────────────────────────────────────────────────────────
+  Edit        (default)         Always                        Opens row in edit mode
+  Extract     (default)         ExtractionStatus != Completed Triggers extraction job
+  Map         (default)         MappingStatus != Mapped       Triggers mapping
+  Generate    ag-btn-primary    MappingStatus == Mapped       Generates document
+  Download    (default)         DocumentReference not empty   Downloads PDF from blob
+  Delete      ag-btn-danger     Always                        Confirms + deletes record
+
+  Visibility rules are defined as JavaScript functions in the actionButtons
+  array, evaluated per row on every render. Adding a new rule is one line:
+    visible: function(r) { return r.SomeField === 'SomeValue'; }
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 6.  LOOKUP SYSTEM (COMBO BOXES)
+═══════════════════════════════════════════════════════════════════════════════
+
+  Each combo box is populated from a lookup table via the service layer.
+
+  Service method            Lookup table                 Key field
+  ──────────────────────────────────────────────────────────────────────────
+  GetServiceTypes()         service_type                 service_type_id
+  GetPoaFormTypes()         poa_form_types               poa_form_type_id
+  GetFormUses()             poa_form_uses                poa_form_use_id
+  GetPoaTypes()             poa_types                    poa_type_id
+  GetSignatureTypes()       poa_signature_types          poa_signature_type_id
+  GetOnlineRequirements()   poa_online_requirements      poa_online_requirement_id
+  GetReturnTypes()          poa_return_types             poa_return_type_id
+  GetMailCenters()          mail_centers                 mail_center_id
+  GetStates()               state_codes                  code (e.g. "TX")
+
+  Each method returns IEnumerable<LookupItem> { Id, Name }.
+  The code-behind converts these to { value, label } via ToOptions():
+    value = LookupItem.Id    (the FK id — what gets stored and sent to EF)
+    label = LookupItem.Name  (the display text the user sees)
+
+  State is a special case:
+  ──────────────────────────
+    GetStates() returns code (e.g. "TX") as Id and state name as Name.
+    The grid uses the code as the option value because:
+      1. It is displayed directly in the grid State column
+      2. It is used as the filter value (filter by TX, CA, etc.)
+    The DTO sends State = "TX" and the server resolves it to StateId:
+      state_id = context.state_codes
+                    .Where(s => s.abbreviation == form.State)
+                    .Select(s => (int?)s.id).FirstOrDefault()
+
+  Pre-selection in edit mode:
+  ────────────────────────────
+    When a row is opened for editing, FlattenRecords emits the FK id as the
+    field value (e.g. ServiceTypeId = 1). The combo box matches option.value
+    to the record value and pre-selects the correct option automatically.
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 7.  DATA LOADING — HIDDEN FIELDS + RegisterStartupScript
+═══════════════════════════════════════════════════════════════════════════════
+
+  Two data sets are injected by Page_Load:
+
+  A) Grid Data (first page + totalCount)
+  ───────────────────────────────────────
+    Primary:    HiddenGridData.Value = json
+    Secondary:  ClientScript.RegisterStartupScript → window.poaInitialData
+
+    JS reads HiddenGridData first, falls back to window.poaInitialData.
+    Structure:  { items: [...], totalCount: N, pageSize: 10, page: 1 }
+
+  B) Lookup Data (all combo box options)
+  ───────────────────────────────────────
+    Primary:    HiddenLookups.Value = lookupsJson
+    Secondary:  ClientScript.RegisterStartupScript → window.poaLookups
+
+    JS reads HiddenLookups first, falls back to window.poaLookups.
+    Structure:  { serviceTypes:[...], states:[...], mailCenters:[...], ... }
+
+  WHY TWO MECHANISMS (belt-and-suspenders):
+  ────────────────────────────────────────────
+    RegisterStartupScript injects a <script> block just before </form>.
+    With Master Pages and ScriptManager, the injection timing is not guaranteed.
+    HiddenField values are always present in the rendered HTML with no timing
+    dependency — they are the primary and most reliable path.
+
+  ASPX hidden field declarations:
+  ────────────────────────────────
+    <asp:HiddenField ID="HiddenGridData" runat="server"
+        ClientIDMode="Static" Value="[]" />
+    <asp:HiddenField ID="HiddenLookups"  runat="server"
+        ClientIDMode="Static" Value="{}" />
+
+    ClientIDMode="Static" ensures the rendered id is always exactly
+    "HiddenGridData" / "HiddenLookups" regardless of naming containers.
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 8.  SERVER-SIDE PAGINATION
+═══════════════════════════════════════════════════════════════════════════════
+
+  The grid uses server-side pagination — only the current page is in memory.
+
+  INITIAL LOAD (Page_Load):
+  ──────────────────────────
+    LoadFirstPage() fetches page 1 (10 records) + totalCount.
+    Injects into HiddenGridData and window.poaInitialData.
+    JS reads this and sets grid._serverTotalCount = totalCount.
+    The pager immediately shows the correct total pages (e.g. "1 of 5").
+
+  SUBSEQUENT NAVIGATION (dataLoader):
+  ─────────────────────────────────────
+    Every page click, search, sort, filter, or page-size change calls
+    dataLoader, which POSTs to GetPage WebMethod:
+
+      POST Default.aspx/GetPage
+      Body: { page, pageSize, search, filter, sortKey, sortDir }
+
+    GetPage calls FakePoaFormsService.GetAllForms (real: PoaFormsService)
+    with the same parameters and returns:
+      { items: [...], totalCount: N }
+
+    The JS updates grid._serverTotalCount and re-renders the body and pager.
+
+  updateRecord / removeRecord in server-side mode:
+  ──────────────────────────────────────────────────
+    These skip dataLoader entirely — they patch the in-memory slice and
+    re-render locally. This means badge changes (Extract → In Progress) and
+    row deletions are immediate without a server round-trip.
+
+  REAL SERVICE WIRING:
+  ─────────────────────
+    In GetPage WebMethod, replace:
+      FakePoaFormsService.GetAllForms(pageSize, page, out totalCount,
+          search, filter, sortKey, sortDir)
+    With:
+      PoaFormsService.GetAllForms(pageSize, page,
+          new PoaFormFilter { State = filter, Search = search },
+          out totalCount)
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 9.  PDF DOCUMENT UPLOAD
+═══════════════════════════════════════════════════════════════════════════════
+
+  Upload uses UploadDocument.ashx (Generic HTTP Handler), NOT a [WebMethod].
+  [WebMethod] requires Content-Type: application/json and cannot receive
+  multipart/form-data. The handler receives all request types natively.
+
+  UPLOAD FLOW:
+  ─────────────
+    1. User clicks "Choose PDF" → file picker opens (accept=".pdf")
+    2. File selected → client validates immediately:
+         - Extension must be in uploadAllowedExtensions (default: ['.pdf'])
+         - MIME type cross-checked against known extension map
+         - File size must be ≤ uploadMaxSizeMb (default: 20 MB)
+       Validation errors shown in the upload widget instantly.
+    3. User clicks "Upload to Storage"
+         - XHR POST to UploadDocument.ashx with FormData
+         - XHR (not fetch) used because only XHR exposes upload progress events
+         - Progress bar animates 0% → 100%
+         - Save button disabled and shows "Uploading…" during upload
+    4. Handler returns { "guid": "xxxxxxxx-..." } on success
+    5. GUID stored in _newBuffer.DocumentReference and _uploadState
+    6. FileName and FileExtension stored in _newBuffer
+    7. Save button unlocks — now enabled
+    8. User clicks "Save New Template"
+         - _finaliseInsert re-applies GUID + FileName from _uploadState
+           (ensures _collectFormValues cannot overwrite them with empty strings
+           from the readonly input fields)
+
+  UPLOAD GATE — Save is blocked until a valid GUID exists:
+  ──────────────────────────────────────────────────────────
+    If user clicks Save without uploading:
+      - Context-specific error shown in upload widget
+      - Save button shakes (ag-shake animation)
+      - Specific messages for each blocked state:
+          No file chosen:        "A document must be uploaded before saving…"
+          File chosen, not sent: "The document has not been uploaded yet…"
+          Upload in progress:    "Upload is still in progress…"
+
+  CONFIGURATION:
+  ───────────────
+    uploadDocumentField:      'DocumentReference'   ← GUID stored in this key
+    uploadMaxSizeMb:           20                   ← change to 15 or 30 as needed
+    uploadAllowedExtensions:  ['.pdf']              ← add '.docx', '.tiff' etc.
+
+  HANDLER REAL WIRING:
+  ─────────────────────
+    In UploadDocument.ashx.cs ProcessRequest, replace the stub with:
+      var result = await BlobDocumentService.UploadAsync(
+          file.InputStream,          // Stream — no temp file written
+          file.FileName,             // string
+          (long?)file.ContentLength  // long?
+      );
+      if (!result.Success)
+          throw new Exception(result.ErrorMessage);
+      WriteJson(context, new { guid = result.BlobName });
+
+  DOWNLOAD:
+  ──────────
+    DownloadDocument.ashx mirrors GetXMFaxReceipt:
+      blobName + fileName + fileExt from query string
+      → GetDocumentAsync → ConvertStreamToByteArray → StreamFileToResponse
+    Uses Response.Flush() + ApplicationInstance.CompleteRequest()
+    NOT Response.End() (throws headers-already-sent exception).
+    Triggered via hidden iframe so the page does not navigate away.
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 10.  ACTION BUTTON WIRING (WebMethods)
+═══════════════════════════════════════════════════════════════════════════════
+
+  All actions call WebMethods via the callPageMethod helper:
+
+    callPageMethod(methodName, payload, onSuccess)
+      - POSTs JSON to Default.aspx/<methodName>
+      - Unwraps ASP.NET's { d: "json-string" } wrapper automatically
+      - Calls onSuccess with the parsed result object
+
+  CASE-SENSITIVITY RULE:
+  ────────────────────────
+    ASP.NET WebMethod JSON binding is case-sensitive on parameter names.
+    Single-parameter WebMethods use int Id (capital I):
+      public static string DeleteForm(int Id)
+    The JS sends { Id: e.record.Id } — must match exactly.
+    DTO-based WebMethods use object parameter name matching:
+      public static string InsertForm(PoaFormDto form)
+    The JS sends { form: dto } — the wrapper key must match the C# param name.
+
+  WEBMETHOD SUMMARY:
+  ───────────────────
+
+    GetPage(page, pageSize, search, filter, sortKey, sortDir)
+      Returns: { items:[...], totalCount:N }
+      Called by: dataLoader on every navigation action
+
+    InsertForm(PoaFormDto form)
+      Returns: { Id:N, LastUpdated:"MM/dd/yyyy hh:mm tt" }
+      Called by: onSave when e.isNew === true
+      JS uses returned Id + LastUpdated to patch the in-memory record
+
+    UpdateForm(PoaFormDto form)
+      Returns: { LastUpdated:"MM/dd/yyyy hh:mm tt" }
+      Called by: onSave when e.isNew === false
+      JS patches LastUpdated on the in-memory record
+
+    DeleteForm(int Id)
+      Returns: { Success:true }
+      Called by: Delete action button after user confirms
+      JS calls grid.removeRecord only after Success:true
+
+    TriggerExtraction(int Id)
+      Returns: { JobId:"JOB-...", Status:"In Progress" }
+      Called by: Extract action button
+      JS flips badge + starts polling
+
+    GetExtractionStatus(int Id)
+      Returns: { Status:"Completed" / "In Progress" / "Error" }
+      Called by: startExtractionPolling every 5 seconds
+
+    TriggerMapping(int Id)
+      Returns: { Status:"Partial", RedirectUrl:null }
+      Called by: Map action button
+      RedirectUrl → navigate to mapping page in production
+
+    GenerateDocument(int Id)
+      Returns: { Success:true, RedirectUrl:null }
+      Called by: Generate action button
+      RedirectUrl → navigate to generated document in production
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 11.  DTO & DATA CONTRACT
+═══════════════════════════════════════════════════════════════════════════════
+
+  PoaFormDto — received by InsertForm and UpdateForm from the JS:
+
+    public class PoaFormDto
+    {
+        public int    Id                  { get; set; }
+        public string Description         { get; set; }
+        public string State               { get; set; }   // abbreviation "TX"
+        public bool   Active              { get; set; }
+        public int?   MailCenterId        { get; set; }
+
+        // FK ids sent directly from the combo boxes
+        public int?   ServiceTypeId       { get; set; }
+        public int?   PoaFormTypeId       { get; set; }
+        public int?   FormUseId           { get; set; }
+        public int?   PoaTypeId           { get; set; }
+        public int?   SignatureTypeId     { get; set; }
+        public int?   ReturnTypeId        { get; set; }
+        public int?   OnlineRequirementId { get; set; }
+
+        public string DocumentReference   { get; set; }
+        public string FileName            { get; set; }
+        public string FileExtension       { get; set; }
+        public string Notes               { get; set; }
+    }
+
+  FlattenRecords — maps model → JS JSON property names:
+  ───────────────────────────────────────────────────────
+    The JSON key names in FlattenRecords MUST match the editField key
+    values in the ASPX. This is the contract between C# and JS.
+
+    ServiceTypeId       = x.ServiceTypeId       ← matches editField key
+    PoaFormTypeId       = x.PoaFormTypeId       ← matches editField key
+    FormUseId           = x.FormUseId           ← matches editField key
+    ... (same for all FK id fields)
+
+    State = x.State           ← abbreviation string, matches column key
+    LastUpdated = formatted   ← "MM/dd/yyyy hh:mm tt" string
+
+  onSave DTO builder (in ASPX JS):
+  ──────────────────────────────────
+    e.record.ServiceTypeId already holds the FK int (it was set by the combo).
+    The DTO builder reads it directly — no translation:
+      ServiceTypeId: parseInt(e.record.ServiceTypeId, 10) || null
+
+    Active coercion (checkbox can come as bool, string, or "on"):
+      Active: e.record.Active === true
+           || e.record.Active === 'true'
+           || e.record.Active === 'on'
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 12.  READ-ONLY vs EDIT MODE
+═══════════════════════════════════════════════════════════════════════════════
+
+  ARROW (▶) CLICK — opens in READ-ONLY VIEW:
+  ─────────────────────────────────────────────
+    All fields rendered as labelled display divs (not inputs).
+    Labels are bold/dark uppercase. Values are normal weight below.
+    Select fields show the label text (e.g. "Full") not the raw id (1).
+    Action bar shows only a Close button.
+    No data can be changed in this mode.
+
+  EDIT BUTTON CLICK — opens in EDIT MODE:
+  ─────────────────────────────────────────
+    All fields rendered as real inputs (text, select, checkbox, textarea).
+    If row is already open in read-only mode, clicking Edit switches it
+    in-place without collapsing first (_setEditMode re-paints the panel).
+    Action bar shows Save / Cancel / Delete.
+
+  singleExpand: true
+  ──────────────────
+    Opening one row automatically collapses all others.
+    Keeps the grid clean when reviewing multiple templates.
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 13.  REFRESH & RESET STATE
+═══════════════════════════════════════════════════════════════════════════════
+
+  The Refresh button lives in the grid title bar (right of "Add New Template").
+  Clicking it calls grid.resetState() which:
+
+    1. Resets internal state:
+         _page = 1, _searchVal = '', _filterVal = '',
+         _sortKey = null, _sortDir = 'asc',
+         _expanded = {}, _editMode = {}
+
+    2. Resets DOM controls:
+         Search input → cleared
+         Filter dropdown → reset to first option ("All States")
+         Column sort indicators → removed
+
+    3. Fires _apply() → dataLoader → GetPage(page:1, pageSize:10, ...)
+       Server returns the first page with default ordering.
+
+  showRefreshButton: true (default)
+  ──────────────────────────────────
+    The button is on by default. Set to false to hide it on a specific page.
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 14.  KEY CONFIGURATION OPTIONS
+═══════════════════════════════════════════════════════════════════════════════
+
+  Option                    Value         Description
+  ─────────────────────────────────────────────────────────────────────────────
+  title                     'POA Templates' Header label + record count
+  addButtonLabel            '+ Add New Template' Text on Add button
+  showAddButton             true          Show/hide Add button
+  showRefreshButton         true          Show/hide Refresh button (default true)
+  singleExpand              true          One row open at a time
+  expandMode                'edit'        Arrow opens read-only; Edit opens edit
+  pageSize                  10            Records per page on load
+  pageSizeOptions           [10,25,50]    Options in page size selector
+  searchPlaceholder         'Search…'     Search box placeholder text
+  filterField               'State'       Field used for dropdown filter
+  emptyMessage              'No templates found.'  Shown when grid is empty
+  showInsert                true          Show Insert button in Add panel
+  showUpdate                true          Show Save button in edit panel
+  showDelete                true          Show Delete button in edit panel
+  showCancel                true          Show Cancel/Close button
+  uploadDocumentField       'DocumentReference' Key where GUID is stored
+  uploadMaxSizeMb           20            Max upload file size in MB
+  uploadAllowedExtensions   ['.pdf']      Allowed file extensions
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 15.  AccordionGrid.js PUBLIC API
+═══════════════════════════════════════════════════════════════════════════════
+
+  var grid = AccordionGrid.create('containerId', config);
+
+  Data methods:
+  ─────────────
+    grid.loadData(array)              Replace all data, reset pagination
+    grid.addRecord(obj)               Append a record (insert flow)
+    grid.updateRecord(agId, patch)    Merge patch into record (badge update)
+    grid.removeRecord(agId)           Remove record by internal _agId
+    grid.getRecord(agId)              Return record object
+    grid.refresh()                    Re-trigger dataLoader at current page
+
+  Navigation:
+  ───────────
+    grid.setPage(n)                   Jump to page n
+    grid.setPageSize(n)               Change records per page
+    grid.setFilter(value)             Apply filterField filter
+    grid.setSearch(value)             Apply text search
+    grid.resetState()                 Clear all state + reload page 1
+
+  Row control:
+  ────────────
+    grid.expandRow(agId)              Open detail panel (read-only)
+    grid.expandRowForEdit(agId)       Open detail panel (edit mode)
+    grid.collapseRow(agId)            Close detail panel
+    grid.collapseAll()                Close all open rows
+
+  In server-side mode (dataLoader configured):
+    updateRecord and removeRecord skip dataLoader and re-render locally.
+    This keeps badge changes and deletions instant without a server call.
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 16.  SWITCHING POC TO PRODUCTION
+═══════════════════════════════════════════════════════════════════════════════
+
+  FILE              What to change
+  ──────────────────────────────────────────────────────────────────────────
+
+  Default.aspx      Nothing changes.
+                    The ASPX is the UI contract — columns, fields, sections,
+                    actions, upload config, callbacks all stay identical.
+                    window.poaLookups shape must remain the same.
+
+  Default.aspx.cs   Six changes:
+
+    1. Inject IPoaFormsService (Ninject property injection)
+         [Inject] public IPoaFormsService PoaFormsService { get; set; }
+
+    2. Replace FakePoaFormsService.GetAllForms in LoadFirstPage + GetPage
+         PoaFormsService.GetAllForms(size, page, new PoaFormFilter(), out count)
+
+    3. Replace each FakePoaFormsService lookup call in LoadLookups:
+         FakePoaFormsService.GetServiceTypes() → PoaFormsService.GetServiceTypes()
+         (repeat for all 9 lookup methods)
+
+    4. Replace InsertForm stub with real EF entity insert (see Section 11)
+
+    5. Replace UpdateForm stub with real EF entity update
+
+    6. Delete: FakePoaFormsService, PoaFormModel, LookupItem classes
+
+  UploadDocument.ashx.cs   Replace stub with:
+      var result = await BlobDocumentService.UploadAsync(
+          file.InputStream, file.FileName, (long?)file.ContentLength);
+      WriteJson(context, new { guid = result.BlobName });
+
+  DownloadDocument.ashx.cs   Replace stub with:
+      var container = FaxConfiguration.GetAzureDocumentContainerName();
+      var stream = await faxSender.GetDocumentAsync(blobName, container);
+      byte[] bytes = await ConvertStreamToByteArrayAsync(stream);
+      StreamFileToResponse(context, bytes, fileExt, fileName);
+
+═══════════════════════════════════════════════════════════════════════════════
+ END OF DOCUMENT
+═══════════════════════════════════════════════════════════════════════════════

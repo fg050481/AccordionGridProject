@@ -1,0 +1,528 @@
+﻿═══════════════════════════════════════════════════════════════════════════════
+ POA FORM MANAGEMENT — EXTRACTION FLOW & PROCESS
+ Technical Reference
+ Date: 2026-06-25
+═══════════════════════════════════════════════════════════════════════════════
+
+
+TABLE OF CONTENTS
+─────────────────
+  1. Overview
+  2. Full Flow Diagram
+  3. Phase 1 — Trigger (Synchronous)
+  4. Phase 2 — Background Job (Hangfire)
+  5. Phase 3 — Status Polling (Browser)
+  6. Document Analysis Options (Aspose vs Azure DI)
+  7. Normalization Strategy
+  8. Azure DI Custom Model — Training Guide
+  9. Status Values & Badge Colors
+  10. Error Handling
+  11. POC vs Production Differences
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 1.  OVERVIEW
+═══════════════════════════════════════════════════════════════════════════════
+
+The extraction process reads a POA template PDF from blob storage, analyzes its
+structure using a document intelligence service, normalizes the results into a
+structured JSON model, and stores that model so the template can be used for
+document generation.
+
+The process is split into three phases:
+
+  Phase 1  → Synchronous HTTP call (~200ms) — triggers the job, returns immediately
+  Phase 2  → Hangfire background job (seconds to minutes) — does the heavy work
+  Phase 3  → Browser polling every 5 seconds — updates the badge in real time
+
+This design ensures the UI never blocks waiting for a slow analysis operation.
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 2.  FULL FLOW DIAGRAM
+═══════════════════════════════════════════════════════════════════════════════
+
+  User clicks Extract button
+          ↓
+  ┌─────────────────────────────────────────────────────────┐
+  │  PHASE 1 — SYNCHRONOUS (runs in the HTTP request)       │
+  │                                                         │
+  │  POST /Default.aspx/TriggerExtraction { Id: formId }   │
+  │          ↓                                              │
+  │  1. Validate DocumentReference exists                   │
+  │  2. Set ExtractionStatus = "In Progress" in DB         │
+  │  3. BackgroundJob.Enqueue<IPoaExtractionJob>(formId)   │
+  │  4. Return { JobId, Status: "In Progress" }            │
+  └─────────────────────────────────────────────────────────┘
+          ↓
+  Browser receives response
+          ↓
+  grid.updateRecord → badge flips to "In Progress"
+          ↓
+  startExtractionPolling begins (every 5 seconds)
+          ↓
+  ┌─────────────────────────────────────────────────────────┐
+  │  PHASE 2 — HANGFIRE BACKGROUND JOB                      │
+  │  (runs on Hangfire worker, independent of HTTP)         │
+  │                                                         │
+  │  Step 1: Get PDF from Blob Storage                      │
+  │    BlobDocumentService.GetDocumentAsync(                │
+  │        docReference, containerName)                     │
+  │    → returns Stream                                     │
+  │          ↓                                              │
+  │  Step 2: Document Analysis                              │
+  │    IDocumentAnalysisService.AnalyzeAsync(               │
+  │        stream, formType, state)                         │
+  │    → Aspose (now) or Azure DI (later)                   │
+  │    → returns raw ExtractionResult:                      │
+  │        - Text blocks + positions                        │
+  │        - Bounding boxes (x, y, width, height, page)    │
+  │        - Tables and rows                                │
+  │        - Form fields (if fillable PDF)                  │
+  │        - Page count                                     │
+  │          ↓                                              │
+  │  Step 3: Normalize Results                              │
+  │    INormalizerService.Normalize(raw, form)              │
+  │    → maps raw content → TemplateStructure:              │
+  │        - Field zones with coordinates                   │
+  │        - Signature areas                                │
+  │        - Tax year tables                                │
+  │        - Checkbox groups                                │
+  │        - Required vs optional fields                    │
+  │          ↓                                              │
+  │  Step 4: Save Extraction Results                        │
+  │    TemplateStructureService.SaveAsync(formId, structure)│
+  │    → stores JSON to DB or blob                          │
+  │          ↓                                              │
+  │  Step 5: Update Template Status                         │
+  │    PoaFormsService.UpdateExtractionStatus(              │
+  │        formId, ExtractionStatus.Completed)              │
+  │    → or ExtractionStatus.Error on failure               │
+  └─────────────────────────────────────────────────────────┘
+          ↓
+  ┌─────────────────────────────────────────────────────────┐
+  │  PHASE 3 — STATUS POLLING (browser)                     │
+  │                                                         │
+  │  Every 5 seconds:                                       │
+  │    POST /Default.aspx/GetExtractionStatus { Id }        │
+  │    → returns { Status: "In Progress" / "Completed"      │
+  │                        / "Error" }                      │
+  │    → grid.updateRecord updates badge                    │
+  │    → stops when Completed or Error                      │
+  │    → max 24 polls = 2 minutes timeout                   │
+  └─────────────────────────────────────────────────────────┘
+          ↓
+  Badge flips to "Completed"
+  Review button becomes available
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 3.  PHASE 1 — TRIGGER (SYNCHRONOUS)
+═══════════════════════════════════════════════════════════════════════════════
+
+  WebMethod: TriggerExtraction(int Id)
+
+  REAL IMPLEMENTATION:
+  ────────────────────
+    // 1. Set status immediately so the UI reflects the change
+    PoaFormsService.UpdateExtractionStatus(Id, ExtractionStatus.InProgress);
+
+    // 2. Enqueue Hangfire job — returns immediately with a JobId
+    var jobId = BackgroundJob.Enqueue<IPoaExtractionJob>(
+        job => job.RunAsync(Id, CancellationToken.None));
+
+    return new { JobId = jobId, Status = "In Progress" };
+
+  WHAT IT RETURNS:
+  ────────────────
+    { "d": "{\"JobId\":\"abc123\",\"Status\":\"In Progress\"}" }
+
+    The browser receives this, flips the badge, and starts polling.
+
+  POC STUB:
+  ─────────
+    Returns a fake JobId (JOB-{id}-{guid}) and "In Progress" status.
+    Replace with the real implementation above.
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 4.  PHASE 2 — BACKGROUND JOB (HANGFIRE)
+═══════════════════════════════════════════════════════════════════════════════
+
+  Interface: IPoaExtractionJob
+  Method:    RunAsync(int formId, CancellationToken ct)
+
+  WHY HANGFIRE AND NOT A SYNCHRONOUS CALL:
+  ─────────────────────────────────────────
+    - PDF fetch from blob:           1-5 seconds
+    - Aspose / Azure DI analysis:    5-60 seconds (multi-page PDFs)
+    - Normalize + save:              1-5 seconds
+    Total potential:                 up to 70 seconds
+
+    A synchronous HTTP call times out at ~30-60 seconds (IIS / browser / load
+    balancer limit). Hangfire runs on a background thread with no HTTP timeout.
+
+  HANGFIRE BENEFITS FOR THIS USE CASE:
+  ──────────────────────────────────────
+    Retry on failure    → if Aspose throws a transient error, Hangfire
+                          retries automatically with exponential backoff
+    Dashboard           → see which jobs are running, failed, retried
+    Queue isolation     → [Queue("extraction")] keeps extraction jobs
+                          separate from other background work
+    Persistence         → jobs survive IIS app pool recycles
+
+  JOB IMPLEMENTATION SKELETON:
+  ─────────────────────────────
+    public class PoaExtractionJob : IPoaExtractionJob
+    {
+        private readonly IPoaFormsService _poaService;
+        private readonly IBlobDocumentService _blobService;
+        private readonly IDocumentAnalysisService _analysisService;
+        private readonly INormalizerService _normalizer;
+        private readonly ITemplateStructureService _structureService;
+
+        public async Task RunAsync(int formId, CancellationToken ct)
+        {
+            try
+            {
+                // Step 1: Get PDF from blob storage
+                var form = await _poaService.GetByIdAsync(formId);
+                var container = FaxConfiguration.GetAzureDocumentContainerName();
+                var stream = await _blobService.GetDocumentAsync(
+                    form.Document.DocumentReference, container);
+
+                // Step 2: Analyze with document intelligence service
+                var raw = await _analysisService.AnalyzeAsync(
+                    stream, form.FormType, form.State);
+
+                // Step 3: Normalize raw results → TemplateStructure
+                var structure = _normalizer.Normalize(raw, form);
+
+                // Step 4: Save TemplateStructure
+                await _structureService.SaveAsync(formId, structure);
+
+                // Step 5: Update status to Completed
+                await _poaService.UpdateExtractionStatusAsync(
+                    formId, ExtractionStatus.Completed);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Extraction failed for formId={FormId}", formId);
+                await _poaService.UpdateExtractionStatusAsync(
+                    formId, ExtractionStatus.Error);
+                throw; // re-throw so Hangfire records the failure
+            }
+        }
+    }
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 5.  PHASE 3 — STATUS POLLING (BROWSER)
+═══════════════════════════════════════════════════════════════════════════════
+
+  WebMethod: GetExtractionStatus(int Id)
+
+  REAL IMPLEMENTATION:
+  ────────────────────
+    var status = PoaFormsService.GetExtractionStatus(Id);
+    return new { Status = status.ToString() };
+
+  BROWSER POLLING LOGIC (in Default.aspx JS):
+  ────────────────────────────────────────────
+    function startExtractionPolling(agId, formId, jobId) {
+        var MAX_POLLS = 24;   // 24 × 5s = 2 minutes max
+        var polls = 0;
+
+        var timer = setInterval(function () {
+            polls++;
+            callPageMethod('GetExtractionStatus', { Id: formId },
+                function (resp) {
+                    grid.updateRecord(agId, { ExtractionStatus: resp.Status });
+
+                    if (resp.Status === 'Completed' || resp.Status === 'Error') {
+                        clearInterval(timer);   // stop polling
+                    } else if (polls >= MAX_POLLS) {
+                        clearInterval(timer);   // timeout after 2 minutes
+                        log('warn', 'Extraction polling timed out');
+                    }
+                });
+        }, 5000);
+    }
+
+  POC STUB:
+  ─────────
+    Always returns "Completed" immediately on the first poll so you can
+    see the full badge flip cycle (In Progress → Completed) during testing.
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 6.  DOCUMENT ANALYSIS OPTIONS (ASPOSE vs AZURE DI)
+═══════════════════════════════════════════════════════════════════════════════
+
+  The analysis step is hidden behind IDocumentAnalysisService so you can
+  swap implementations without changing the job code.
+
+  Interface:
+  ──────────
+    public interface IDocumentAnalysisService
+    {
+        Task<ExtractionResult> AnalyzeAsync(
+            Stream pdfStream,
+            string formType,
+            string state,
+            CancellationToken ct = default);
+    }
+
+  OPTION A — ASPOSE (current fallback):
+  ──────────────────────────────────────
+    Already licensed in C3. Rule-based parsing.
+    Best for: fillable PDFs (reads field names directly), consistent layouts.
+
+    public class AsposeDocumentAnalysisService : IDocumentAnalysisService
+    {
+        public Task<ExtractionResult> AnalyzeAsync(Stream pdf, ...)
+        {
+            var doc = new Aspose.Pdf.Document(pdf);
+            // Extract text blocks, coordinates, form fields
+            // Map to ExtractionResult
+        }
+    }
+
+  OPTION B — AZURE DOCUMENT INTELLIGENCE (when approved):
+  ─────────────────────────────────────────────────────────
+    Custom model trained per layout group.
+    Best for: variable layouts, non-fillable PDFs, high accuracy.
+
+    public class AzureDiAnalysisService : IDocumentAnalysisService
+    {
+        public async Task<ExtractionResult> AnalyzeAsync(Stream pdf,
+            string formType, string state, ...)
+        {
+            var modelId = ResolveModelId(formType, state);
+            var client = new DocumentAnalysisClient(endpoint, credential);
+            var op = await client.AnalyzeDocumentAsync(
+                WaitUntil.Completed, modelId, pdf);
+            return MapToExtractionResult(op.Value);
+        }
+
+        private string ResolveModelId(string formType, string state)
+        {
+            if (formType == "2848" || formType == "8821")
+                return "model-federal-irs";
+            if (state == "CA") return "model-ca-specific";
+            if (state == "NY") return "model-ny-specific";
+            if (state == "TX") return "model-tx-specific";
+            return "model-short-state";   // covers most remaining states
+        }
+    }
+
+  SWITCHING BETWEEN OPTIONS:
+  ──────────────────────────
+    In NinjectWebCommon.cs, change the binding:
+
+    // Aspose (current)
+    kernel.Bind<IDocumentAnalysisService>()
+          .To<AsposeDocumentAnalysisService>();
+
+    // Azure DI (when approved)
+    kernel.Bind<IDocumentAnalysisService>()
+          .To<AzureDiAnalysisService>();
+
+    The job code does not change at all.
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 7.  NORMALIZATION STRATEGY
+═══════════════════════════════════════════════════════════════════════════════
+
+  Normalization maps the raw extraction output (text blocks + coordinates)
+  to your domain model (TemplateStructure with typed field zones).
+
+  RECOMMENDED APPROACH — Start with code rules:
+  ──────────────────────────────────────────────
+    public class PoaNormalizerService : INormalizerService
+    {
+        public TemplateStructure Normalize(ExtractionResult raw, PoaForm form)
+        {
+            var fields = new List<ExtractedField>();
+
+            foreach (var block in raw.TextBlocks)
+            {
+                if (IsLabel(block.Text, out var fieldType))
+                {
+                    // Find the value block to the right on the same Y axis
+                    var value = raw.TextBlocks
+                        .Where(b => Math.Abs(b.Y - block.Y) < 5
+                                 && b.X > block.X
+                                 && b.X < block.X + 400)
+                        .OrderBy(b => b.X)
+                        .FirstOrDefault();
+
+                    fields.Add(new ExtractedField
+                    {
+                        FieldType = fieldType,
+                        Value     = value?.Text,
+                        Zone      = value?.BoundingBox
+                    });
+                }
+            }
+
+            return new TemplateStructure
+            {
+                Fields = fields,
+                Pages  = raw.Pages
+            };
+        }
+
+        private static bool IsLabel(string text, out string fieldType)
+        {
+            var map = new Dictionary<string, string>(
+                StringComparer.OrdinalIgnoreCase)
+            {
+                { "Taxpayer Name:",    "TaxpayerName"   },
+                { "Taxpayer TIN:",     "TaxpayerTin"    },
+                { "Tax Authority:",    "TaxAuthority"   },
+                { "Representative:",   "Representative" },
+                { "Tax Years:",        "TaxYears"       },
+                { "Signature:",        "SignatureZone"  },
+            };
+            return map.TryGetValue(text.Trim(), out fieldType);
+        }
+    }
+
+  WHY CODE RULES FIRST:
+  ─────────────────────
+    - IRS Form 2848 and 8821 are always the same layout — rules work perfectly
+    - Free, fast, deterministic, fully testable
+    - Human review catches the 5% the rules miss
+    - Reviewed corrections become training data for a better model later
+
+  WHEN TO ADD AI:
+  ───────────────
+    If the review workload proves that rules miss too many fields across
+    50+ state templates, consider:
+    - LayoutLMv3 (Microsoft, open source) fine-tuned on your reviewed data
+    - Azure DI custom neural model trained on 10-15 labeled examples per layout
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 8.  AZURE DI CUSTOM MODEL — TRAINING GUIDE
+═══════════════════════════════════════════════════════════════════════════════
+
+  You do NOT need to train 50 models (one per state).
+  Group templates by visual layout similarity first.
+
+  REALISTIC GROUPING FOR 50 STATES:
+  ───────────────────────────────────
+    Model A  →  Federal IRS 2848 / 8821     ~15-20 states
+    Model B  →  Short single-page state POA ~10-12 states
+    Model C  →  Long multi-page state POA   ~8-10 states
+    Model D  →  CA-specific (complex)        CA only
+    Model E  →  NY-specific (complex)        NY only
+    Model F  →  TX-specific (complex)        TX only
+    Aspose   →  Fillable PDFs (no training) ~10+ states
+
+    Total: 6 models + Aspose
+
+  TRAINING COST:
+  ──────────────
+    Custom Template Model training:   FREE
+    Custom Neural Model training:     $10 per training run
+    Analysis (production):            $1.50 per 1,000 pages
+    Free tier (F0):                   500 pages/month free
+
+    For development + initial training: $0 (free tier covers it)
+    For production at low-medium volume: ~$1.50-$7.50/month
+
+  TRAINING STEPS (Azure DI Studio):
+  ───────────────────────────────────
+    1. Upload 10 example PDFs for each layout group to blob storage
+    2. Open studio.cognitiveservices.azure.com
+    3. Create a new project → Custom extraction model
+    4. Label each field zone by drawing boxes and naming them
+       ("TaxpayerName", "SignatureZone", "TaxYears", etc.)
+    5. Click Train → model is ready in minutes
+    6. Test on a new unlabeled PDF to verify accuracy
+    7. Deploy and bind in NinjectWebCommon
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 9.  STATUS VALUES & BADGE COLORS
+═══════════════════════════════════════════════════════════════════════════════
+
+  ExtractionStatus:
+  ─────────────────
+    "Not Started"   →  gray badge     (default)   no extraction attempted yet
+    "In Progress"   →  blue badge     (info)       Hangfire job is running
+    "Completed"     →  green badge    (success)    structure saved, ready for review
+    "Error"         →  red badge      (danger)     job failed, check logs
+
+  MappingStatus (set during the Review step):
+  ────────────────────────────────────────────
+    "Not Mapped"    →  gray badge     (default)   review not started
+    "Partial"       →  blue badge     (info)       some fields reviewed
+    "Mapped"        →  green badge    (success)    all fields approved → Generate enabled
+
+  Grid button visibility rules:
+  ──────────────────────────────
+    Extract button   →  visible when ExtractionStatus != "Completed"
+    Map button       →  visible when MappingStatus != "Mapped"
+    Generate button  →  visible only when MappingStatus == "Mapped"
+    Download button  →  visible only when DocumentReference is not empty
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 10.  ERROR HANDLING
+═══════════════════════════════════════════════════════════════════════════════
+
+  The Hangfire job re-throws exceptions after setting ExtractionStatus = Error.
+  This means:
+    - The Hangfire dashboard shows the failure with the exception message
+    - Hangfire retries automatically (3 attempts by default, exponential backoff)
+    - After max retries, the job moves to the Failed Jobs queue
+    - ExtractionStatus in the DB = "Error" → badge shows red in the grid
+
+  In the grid, clicking Extract again on an "Error" record:
+    - Calls TriggerExtraction again
+    - Sets status back to "In Progress"
+    - Enqueues a new job (previous failed job stays in Hangfire history)
+
+  Common failure reasons and fixes:
+  ───────────────────────────────────
+    "DocumentReference is empty"  →  no PDF was uploaded, upload first
+    "Blob not found"              →  reference is wrong or blob was deleted
+    "Aspose license error"        →  check Aspose license in app config
+    "Azure DI quota exceeded"     →  upgrade from F0 to S0 tier
+    "Timeout"                     →  PDF too large / too many pages, consider chunking
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 11.  POC vs PRODUCTION DIFFERENCES
+═══════════════════════════════════════════════════════════════════════════════
+
+  POC (PoaGridTestApp):
+  ──────────────────────
+    TriggerExtraction   →  returns fake JobId immediately
+    GetExtractionStatus →  always returns "Completed" on first poll
+    No Hangfire         →  no background job infrastructure needed
+    No blob storage     →  no PDF fetch
+    No Azure DI         →  no analysis performed
+    Purpose             →  verify the full UI flow (badge flip, polling, etc.)
+
+  PRODUCTION (PoaFormManagementNew.aspx.cs):
+  ────────────────────────────────────────────
+    TriggerExtraction   →  sets DB status + enqueues real Hangfire job
+    GetExtractionStatus →  reads real ExtractionStatus from DB
+    Hangfire            →  runs the full job pipeline
+    Blob storage        →  fetches real PDF stream
+    Aspose / Azure DI   →  performs real document analysis
+    Purpose             →  processes real POA templates
+
+  TO SWITCH FROM POC TO PRODUCTION:
+  ───────────────────────────────────
+    Replace stub bodies in TriggerExtraction and GetExtractionStatus WebMethods.
+    The JS polling logic, badge colors, and grid update calls stay identical.
+
+═══════════════════════════════════════════════════════════════════════════════
+ END OF DOCUMENT
+═══════════════════════════════════════════════════════════════════════════════

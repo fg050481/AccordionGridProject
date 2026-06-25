@@ -72,6 +72,8 @@
   <ItemGroup>
     <Content Include="Default.aspx" />
     <Content Include="Readme\LookupImplementation.txt" />
+    <Content Include="Readme\POA Grid ExtractionFlow 2026_06_25.txt" />
+    <Content Include="Readme\POA-Grid-TemplateGridComponent-2026-06-25.txt" />
     <Content Include="Scripts\AccordionGrid.js" />
     <Content Include="Web.config" />
     <Content Include="_dev-tracking\POA-Grid-AccordionGrid-ChangeLog-2026-06-24.txt" />
