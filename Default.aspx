@@ -71,9 +71,11 @@
 <body>
 <form id="form1" runat="server">
 
-<%-- Hidden field: code-behind writes JSON here.  Always in the rendered HTML,
-     no timing dependency on RegisterStartupScript injection order. --%>
-<asp:HiddenField ID="HiddenGridData" runat="server" Value="[]" />
+<%-- Hidden fields: code-behind writes JSON here. Always in the rendered HTML,
+     no timing dependency on RegisterStartupScript injection order.
+     Same belt-and-suspenders pattern used for both grid data and lookups. --%>
+<asp:HiddenField ID="HiddenGridData"  runat="server" ClientIDMode="Static" Value="[]" />
+<asp:HiddenField ID="HiddenLookups"   runat="server" ClientIDMode="Static" Value="{}" />
 <div class="page-wrap">
 
     <%-- ── Page header ── --%>
@@ -141,17 +143,34 @@
             }
         ];
 
-        /* ── Lookup tables (injected by code-behind via RegisterStartupScript) ──
-      window.poaLookups is set by LoadFirstPage() in the code-behind.
-      Each property is an array of { label, value } objects where value
-      is the FK id from the lookup table and label is the display text.
-      No hardcoded fallback — the server is the single source of truth.
-   ──────────────────────────────────────────────────────────────────── */
-        var LOOKUPS = window.poaLookups;
+        /* ── Lookup tables ────────────────────────────────────────────
+           PRIMARY:   HiddenLookups hidden field — always in the rendered
+                      HTML, no timing dependency on script injection order.
+           SECONDARY: window.poaLookups — set by RegisterStartupScript,
+                      used as fallback if the hidden field is empty.
+        ──────────────────────────────────────────────────────────── */
+        var LOOKUPS = null;
+
+        // Primary: hidden field
+        var hiddenLookups = document.getElementById('HiddenLookups');
+        if (hiddenLookups && hiddenLookups.value && hiddenLookups.value !== '{}') {
+            try {
+                LOOKUPS = JSON.parse(hiddenLookups.value);
+                log('ok', 'Lookups source: HiddenLookups field.');
+            } catch (ex) {
+                log('err', 'HiddenLookups parse error: ' + ex.message);
+            }
+        }
+
+        // Secondary: window variable from RegisterStartupScript
+        if (!LOOKUPS && window.poaLookups) {
+            LOOKUPS = window.poaLookups;
+            log('info', 'Lookups source: window.poaLookups.');
+        }
 
         if (!LOOKUPS) {
-            log('err', 'window.poaLookups is not defined — lookups were not injected by the code-behind. ' +
-                'Check LoadFirstPage() and verify RegisterStartupScript for "poaLookups" is executing.');
+            log('err', 'Lookups not found. Check LoadLookups() in code-behind — ' +
+                'verify HiddenLookups.Value is assigned and RegisterStartupScript is executing.');
         }
 
         /* ── Edit fields shown in the expanded accordion panel ─────── */
@@ -161,36 +180,16 @@
             { key: 'MailCenterId', label: 'Mail Center', type: 'select', options: LOOKUPS.mailCenters },
             { key: 'Active', label: 'Active', type: 'checkbox' },
 
-            { key: 'ServiceType', label: 'Service Type', type: 'select', options: LOOKUPS.serviceTypes },
-            { key: 'PoaFormType', label: 'Form Type', type: 'select', options: LOOKUPS.poaFormTypes },
-            { key: 'FormUse', label: 'Form Use', type: 'select', options: LOOKUPS.formUses },
-            { key: 'PoaType', label: 'POA Type', type: 'select', options: LOOKUPS.poaTypes },
+            // Key names use the Id suffix so e.record stores the FK id directly
+            // under the same name as the DTO field — no translation needed in onSave.
+            { key: 'ServiceTypeId', label: 'Service Type', type: 'select', options: LOOKUPS.serviceTypes },
+            { key: 'PoaFormTypeId', label: 'Form Type', type: 'select', options: LOOKUPS.poaFormTypes },
+            { key: 'FormUseId', label: 'Form Use', type: 'select', options: LOOKUPS.formUses },
+            { key: 'PoaTypeId', label: 'POA Type', type: 'select', options: LOOKUPS.poaTypes },
 
-            { key: 'SignatureType', label: 'Signature Type', type: 'select', options: LOOKUPS.signatureTypes },
-            { key: 'ReturnType', label: 'Return Type', type: 'select', options: LOOKUPS.returnTypes },
-            { key: 'OnlineRequirement', label: 'Online Requirement', type: 'select', options: LOOKUPS.onlineRequirements },
-
-            { key: 'FileName', label: 'File Name', type: 'text', readOnly: true },
-            { key: 'DocumentReference', label: 'Document Reference', type: 'text', readOnly: true },
-            { key: 'Notes', label: 'Notes', type: 'textarea', fullWidth: true, placeholder: 'Optional notes…' }
-        ];
-
-
-        /* ── Edit fields shown in the expanded accordion panel ─────── */
-        var editFields = [
-            { key: 'Description', label: 'Description', type: 'text', required: true, placeholder: 'Enter description' },
-            { key: 'State', label: 'State', type: 'select', options: LOOKUPS.states },
-            { key: 'MailCenterId', label: 'Mail Center', type: 'select', options: LOOKUPS.mailCenters },
-            { key: 'Active', label: 'Active', type: 'checkbox' },
-
-            { key: 'ServiceType', label: 'Service Type', type: 'select', options: LOOKUPS.serviceTypes },
-            { key: 'PoaFormType', label: 'Form Type', type: 'select', options: LOOKUPS.poaFormTypes },
-            { key: 'FormUse', label: 'Form Use', type: 'select', options: LOOKUPS.formUses },
-            { key: 'PoaType', label: 'POA Type', type: 'select', options: LOOKUPS.poaTypes },
-
-            { key: 'SignatureType', label: 'Signature Type', type: 'select', options: LOOKUPS.signatureTypes },
-            { key: 'ReturnType', label: 'Return Type', type: 'select', options: LOOKUPS.returnTypes },
-            { key: 'OnlineRequirement', label: 'Online Requirement', type: 'select', options: LOOKUPS.onlineRequirements },
+            { key: 'SignatureTypeId', label: 'Signature Type', type: 'select', options: LOOKUPS.signatureTypes },
+            { key: 'ReturnTypeId', label: 'Return Type', type: 'select', options: LOOKUPS.returnTypes },
+            { key: 'OnlineRequirementId', label: 'Online Requirement', type: 'select', options: LOOKUPS.onlineRequirements },
 
             { key: 'FileName', label: 'File Name', type: 'text', readOnly: true },
             { key: 'DocumentReference', label: 'Document Reference', type: 'text', readOnly: true },
@@ -200,9 +199,8 @@
         /* ── Sections (green header groupings in the edit panel) ───── */
         var editSections = [
             { title: 'Template Info', fields: ['Description', 'State', 'MailCenterId', 'Active'] },
-            { title: 'Classification', fields: ['ServiceType', 'PoaFormType', 'FormUse', 'PoaType'] },
-            { title: 'Processing Rules', fields: ['SignatureType', 'ReturnType', 'OnlineRequirement'] },
-            // isDocumentSection:true tells the grid to inject the PDF upload widget here
+            { title: 'Classification', fields: ['ServiceTypeId', 'PoaFormTypeId', 'FormUseId', 'PoaTypeId'] },
+            { title: 'Processing Rules', fields: ['SignatureTypeId', 'ReturnTypeId', 'OnlineRequirementId'] },
             { title: 'Document', fields: ['FileName', 'DocumentReference'], isDocumentSection: true },
             { title: 'Notes', fields: ['Notes'] }
         ];
@@ -386,14 +384,15 @@
                     Active: e.record.Active === true || e.record.Active === 'true' || e.record.Active === 'on',
                     MailCenterId: parseInt(e.record.MailCenterId, 10) || null,
 
-                    // Select fields carry the FK id as their value.
-                    ServiceTypeId: parseInt(e.record.ServiceType, 10) || null,
-                    PoaFormTypeId: parseInt(e.record.PoaFormType, 10) || null,
-                    FormUseId: parseInt(e.record.FormUse, 10) || null,
-                    PoaTypeId: parseInt(e.record.PoaType, 10) || null,
-                    SignatureTypeId: parseInt(e.record.SignatureType, 10) || null,
-                    ReturnTypeId: parseInt(e.record.ReturnType, 10) || null,
-                    OnlineRequirementId: parseInt(e.record.OnlineRequirement, 10) || null,
+                    // Select fields: key name matches DTO field name directly.
+                    // e.record.ServiceTypeId already holds the FK int — no translation.
+                    ServiceTypeId: parseInt(e.record.ServiceTypeId, 10) || null,
+                    PoaFormTypeId: parseInt(e.record.PoaFormTypeId, 10) || null,
+                    FormUseId: parseInt(e.record.FormUseId, 10) || null,
+                    PoaTypeId: parseInt(e.record.PoaTypeId, 10) || null,
+                    SignatureTypeId: parseInt(e.record.SignatureTypeId, 10) || null,
+                    ReturnTypeId: parseInt(e.record.ReturnTypeId, 10) || null,
+                    OnlineRequirementId: parseInt(e.record.OnlineRequirementId, 10) || null,
 
                     DocumentReference: e.record.DocumentReference || '',
                     FileName: e.record.FileName || '',

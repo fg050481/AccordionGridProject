@@ -50,35 +50,138 @@ namespace AccordionGridProject
                 "window.poaInitialData = " + json + ";",
                 addScriptTags: true);
 
-            // ── Lookups (combo box options) ───────────────────────────────────
-            // Maps each LookupItem { Id, Name } → { value, label } so the grid
-            // combo boxes consume them directly.  In real code this calls
-            // PoaFormsService.GetServiceTypes(), GetMailCenters(), etc.
-            var lookups = new
+            // Load combo box lookups separately so the pipeline is
+            // easy to verify and easy to swap to the real service.
+            LoadLookups();
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // LOAD LOOKUPS
+        //
+        // Builds a plain C# anonymous object with one collection per combo box.
+        // Each collection is a list of { value, label } objects — the same shape
+        // the AccordionGrid combo boxes consume.
+        //
+        // THIS METHOD IS THE DIAGNOSTIC BASELINE.
+        // The object below is hardcoded so you can verify the full pipeline
+        // (C# → JsonConvert → RegisterStartupScript → window.poaLookups → JS)
+        // works before connecting to the real service.
+        //
+        // TO SWITCH TO THE REAL SERVICE:
+        // Replace each hardcoded list below with:
+        //   PoaFormsService.GetServiceTypes()
+        //       .Select(x => new { value = x.Id, label = x.Name }).ToList()
+        // (repeat for each lookup)
+        // ─────────────────────────────────────────────────────────────────────
+        private void LoadLookups()
+        {
+            // ── Each list mirrors what your real lookup table returns ──────────
+            // value = FK id (int)  |  label = display text (string)
+            // These must match the real service output exactly.
+
+            var serviceTypes = new[]
             {
-                serviceTypes = ToOptions(FakePoaFormsService.GetServiceTypes()),
-                poaFormTypes = ToOptions(FakePoaFormsService.GetPoaFormTypes()),
-                formUses = ToOptions(FakePoaFormsService.GetFormUses()),
-                poaTypes = ToOptions(FakePoaFormsService.GetPoaTypes()),
-                signatureTypes = ToOptions(FakePoaFormsService.GetSignatureTypes()),
-                onlineRequirements = ToOptions(FakePoaFormsService.GetOnlineRequirements()),
-                returnTypes = ToOptions(FakePoaFormsService.GetReturnTypes()),
-                mailCenters = ToOptions(FakePoaFormsService.GetMailCenters()),
-                // GetStates() returns code as Id + state name; we use the code
-                // as the value (shown in the grid column + used as filter).
-                states = FakePoaFormsService.GetStates()
-                                        .Select(s => new { label = s.Id, value = s.Id })
-                                        .ToList()
+                new { value = 1, label = "Full"    },
+                new { value = 2, label = "Partial" },
+                new { value = 3, label = "Limited" }
             };
 
-            var lookupsJson = JsonConvert.SerializeObject(lookups, new JsonSerializerSettings
+            var poaFormTypes = new[]
             {
-                StringEscapeHandling = StringEscapeHandling.EscapeHtml
-            });
+                new { value = 1, label = "POA"  },
+                new { value = 2, label = "2848" },
+                new { value = 3, label = "8821" }
+            };
+
+            var formUses = new[]
+            {
+                new { value = 1, label = "Filing"          },
+                new { value = 2, label = "Representation"  },
+                new { value = 3, label = "Both"            }
+            };
+
+            var poaTypes = new[]
+            {
+                new { value = 1, label = "Tax"       },
+                new { value = 2, label = "Financial" },
+                new { value = 3, label = "Medical"   }
+            };
+
+            var signatureTypes = new[]
+            {
+                new { value = 1, label = "Digital"    },
+                new { value = 2, label = "Electronic" },
+                new { value = 3, label = "Wet"        }
+            };
+
+            var onlineRequirements = new[]
+            {
+                new { value = 1, label = "None"     },
+                new { value = 2, label = "Required" },
+                new { value = 3, label = "Optional" }
+            };
+
+            var returnTypes = new[]
+            {
+                new { value = 1, label = "Mail"   },
+                new { value = 2, label = "Fax"    },
+                new { value = 3, label = "E-File" },
+                new { value = 4, label = "Portal" }
+            };
+
+            var mailCenters = new[]
+            {
+                new { value = 3,  label = "Mail Center 3"  },
+                new { value = 5,  label = "Mail Center 5"  },
+                new { value = 6,  label = "Mail Center 6"  },
+                new { value = 7,  label = "Mail Center 7"  },
+                new { value = 8,  label = "Mail Center 8"  },
+                new { value = 9,  label = "Mail Center 9"  },
+                new { value = 10, label = "Mail Center 10" },
+                new { value = 11, label = "Mail Center 11" },
+                new { value = 12, label = "Mail Center 12" }
+            };
+
+            // States: value = state code (string), label = state code
+            // Matches GetStates() which returns code as Id.
+            var stateCodes = "AL,AK,AZ,AR,CA,CO,CT,DE,FL,GA,HI,ID,IL,IN,IA,KS,KY,LA,ME,MD," +
+                             "MA,MI,MN,MS,MO,MT,NE,NV,NH,NJ,NM,NY,NC,ND,OH,OK,OR,PA,RI,SC," +
+                             "SD,TN,TX,UT,VT,VA,WA,WV,WI,WY";
+
+            var states = stateCodes.Split(',')
+                .Select(s => new { value = s, label = s })
+                .ToList();
+
+            // ── Build the single lookups object ───────────────────────────────
+            var lookups = new
+            {
+                serviceTypes = serviceTypes,
+                poaFormTypes = poaFormTypes,
+                formUses = formUses,
+                poaTypes = poaTypes,
+                signatureTypes = signatureTypes,
+                onlineRequirements = onlineRequirements,
+                returnTypes = returnTypes,
+                mailCenters = mailCenters,
+                states = states
+            };
+
+            // ── Serialize ─────────────────────────────────────────────────────
+            var lookupsJson = JsonConvert.SerializeObject(
+                lookups,
+                new JsonSerializerSettings
+                {
+                    StringEscapeHandling = StringEscapeHandling.EscapeHtml
+                });
 
             // ── Inject into the page ──────────────────────────────────────────
-            // RegisterStartupScript places a <script> block just before </form>.
-            // The JS on the page reads window.poaLookups after this runs.
+            // PRIMARY: HiddenLookups hidden field — always in the rendered HTML,
+            // no timing dependency on RegisterStartupScript injection order.
+            // Same pattern as HiddenGridData for the grid data.
+            HiddenLookups.Value = lookupsJson;
+
+            // SECONDARY: RegisterStartupScript — sets window.poaLookups as
+            // a fallback in case the hidden field read fails.
             ClientScript.RegisterStartupScript(
                 type: GetType(),
                 key: "poaLookups",
@@ -175,7 +278,7 @@ namespace AccordionGridProject
 
             System.Diagnostics.Trace.TraceInformation(
                 "[InsertForm] Simulated insert — description={0}, serviceTypeId={1}, " +
-                "formTypeId={2}, state={3}, newId={4}",
+                "poaFormTypeId={2}, state={3}, newId={4}",
                 form.Description, form.ServiceTypeId, form.PoaFormTypeId, form.State, newId);
 
             return JsonConvert.SerializeObject(new
@@ -301,15 +404,15 @@ namespace AccordionGridProject
                 x.Active,
                 x.MailCenterId,
 
-                // Select fields emit the FK id as the value so the edit-form
-                // dropdowns pre-select the correct option (option.value == id).
-                ServiceType = x.ServiceTypeId,
-                PoaFormType = x.PoaFormTypeId,
-                FormUse = x.FormUseId,
-                PoaType = x.PoaTypeId,
-                SignatureType = x.SignatureTypeId,
-                ReturnType = x.ReturnTypeId,
-                OnlineRequirement = x.OnlineRequirementId,
+                // Select fields: key name matches the editField key and the DTO
+                // field name — all three are now consistently ...Id suffixed.
+                ServiceTypeId = x.ServiceTypeId,
+                PoaFormTypeId = x.PoaFormTypeId,
+                FormUseId = x.FormUseId,
+                PoaTypeId = x.PoaTypeId,
+                SignatureTypeId = x.SignatureTypeId,
+                ReturnTypeId = x.ReturnTypeId,
+                OnlineRequirementId = x.OnlineRequirementId,
 
                 x.ExtractionStatus,
                 x.MappingStatus,
