@@ -73,6 +73,7 @@
     <Content Include="Default.aspx" />
     <Content Include="Readme\LookupImplementation.txt" />
     <Content Include="Readme\POA Grid ExtractionFlow 2026_06_25.txt" />
+    <Content Include="Readme\POA-Grid-EditFields-Id-Suffix-Fix-2026-07-04.txt" />
     <Content Include="Readme\POA-Grid-TemplateGridComponent-2026-06-25.txt" />
     <Content Include="Scripts\AccordionGrid.js" />
     <Content Include="Web.config" />

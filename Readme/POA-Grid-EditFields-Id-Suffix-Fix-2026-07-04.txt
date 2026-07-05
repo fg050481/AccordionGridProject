@@ -1,0 +1,338 @@
+═══════════════════════════════════════════════════════════════════════════════
+ POA FORM MANAGEMENT — ACCORDION GRID
+ FIX: Edit-mode dropdowns show wrong values (Id-suffix key mismatch)
+ Date: 2026-07-04
+═══════════════════════════════════════════════════════════════════════════════
+
+
+───────────────────────────────────────────────────────────────────────────────
+ 1. THE BUG — WHAT IS HAPPENING AND WHY
+───────────────────────────────────────────────────────────────────────────────
+
+SYMPTOM
+  • View mode (arrow expand)   → shows CORRECT values
+  • Edit mode (Edit button)    → every dropdown shows the FIRST option
+    (FULL SERVICE / POA for Signature / New POA / AL / Missoula Office…)
+  • console.log of the record  → data from server is CORRECT
+
+ROOT CAUSE
+  Each record coming from GetPage carries TWO properties per lookup field:
+
+      ServiceType:        "ADP - UCM"         ← display string (no suffix)
+      ServiceTypeId:      8                   ← numeric FK    (Id suffix)
+      FormType:           "Online Instructions"
+      FormTypeId:         2
+      FormUse:            "Rescind POA"
+      FormUseId:          2
+      PoaType:            "Benefit and Tax"
+      PoaTypeId:          3
+      SignatureType:      "Wet by Registered Officer"
+      SignatureTypeId:    2
+      ReturnType:         "Hard Copy Completed Form Mailed to Mailroom"
+      ReturnTypeId:       2
+      OnlineRequirement:  "Assign as TPA - We follow up"
+      OnlineRequirementId: 1
+
+  EXCEPTION — Mail Center has the naming INVERTED on the backend:
+
+      MailCenterId:       "Londonderry Office"   ← the STRING got the Id name
+      MailCenterIdInt:    2                      ← the INT got pushed to IdInt
+
+  The editFields config keys point at the STRING properties (no suffix).
+  The dropdown option lists carry NUMERIC FK values (1, 2, 3, …).
+
+  So when the edit panel renders a <select>:
+
+      String(option.value) === String(record[field.key])
+      String(8)            === String("ADP - UCM")        → never true
+
+  No <option> gets marked selected, so the browser silently defaults every
+  select to its FIRST option. No error is thrown anywhere.
+
+WHY VIEW MODE LOOKS CORRECT (this is the trap)
+  buildViewFieldHtml does the same failed option-match, BUT it has a
+  fallback:
+
+      display = match ? match.label : escapeHtml(val);   // ← fallback
+
+  When no option matches, it prints the raw value verbatim — and the raw
+  value IS the human-readable string ("ADP - UCM"). So view mode is
+  ACCIDENTALLY correct: it never resolved the lookup at all, it just echoed
+  the string. That is why the bug only surfaces in edit mode.
+
+THE FIX (one sentence)
+  Point every select-type editField key at the numeric ...Id property, and
+  update every other place that references those keys by string.
+
+CRITICAL RULE
+  editField keys are plain strings matched EXACTLY in multiple places.
+  There is no compiler check. A rename missed in one place fails silently
+  (field disappears from its section, or DTO sends null). Rename EVERYWHERE.
+
+
+───────────────────────────────────────────────────────────────────────────────
+ 2. CHANGE #1 — editFields (frontend, PoaFormManagementNew.aspx JS)
+───────────────────────────────────────────────────────────────────────────────
+
+BEFORE:
+    var editFields = [
+        { key: 'Description', label: 'Description', type: 'text', required: true, placeholder: 'Enter description' },
+        { key: 'State', label: 'State', type: 'select', options: LOOKUPS.states },
+        { key: 'MailCenterId', label: 'Mail Center', type: 'select', options: LOOKUPS.mailCenters },
+        { key: 'Active', label: 'Active', type: 'checkbox' },
+
+        { key: 'ServiceType', label: 'Service Type', type: 'select', options: LOOKUPS.serviceTypes },
+        { key: 'FormType', label: 'Form Type', type: 'select', options: LOOKUPS.poaFormTypes },
+        { key: 'FormUse', label: 'Form Use', type: 'select', options: LOOKUPS.formUses },
+        { key: 'PoaType', label: 'POA Type', type: 'select', options: LOOKUPS.poaTypes },
+
+        { key: 'SignatureType', label: 'Signature Type', type: 'select', options: LOOKUPS.signatureTypes },
+        { key: 'ReturnType', label: 'Return Type', type: 'select', options: LOOKUPS.returnTypes },
+        { key: 'OnlineRequirement', label: 'Online Requirement', type: 'select', options: LOOKUPS.onlineRequirements },
+
+        { key: 'FileName', label: 'File Name', type: 'text', readOnly: true },
+        { key: 'DocumentReference', label: 'Document Reference', type: 'text', readOnly: true },
+        { key: 'Notes', label: 'Notes', type: 'textarea', fullWidth: true, placeholder: 'Optional notes…' }
+    ];
+
+AFTER:
+    var editFields = [
+        { key: 'Description', label: 'Description', type: 'text', required: true, placeholder: 'Enter description' },
+        { key: 'State', label: 'State', type: 'select', options: LOOKUPS.states },
+        { key: 'MailCenterId', label: 'Mail Center', type: 'select', options: LOOKUPS.mailCenters },
+        { key: 'Active', label: 'Active', type: 'checkbox' },
+
+        { key: 'ServiceTypeId', label: 'Service Type', type: 'select', options: LOOKUPS.serviceTypes },
+        { key: 'FormTypeId', label: 'Form Type', type: 'select', options: LOOKUPS.poaFormTypes },
+        { key: 'FormUseId', label: 'Form Use', type: 'select', options: LOOKUPS.formUses },
+        { key: 'PoaTypeId', label: 'POA Type', type: 'select', options: LOOKUPS.poaTypes },
+
+        { key: 'SignatureTypeId', label: 'Signature Type', type: 'select', options: LOOKUPS.signatureTypes },
+        { key: 'ReturnTypeId', label: 'Return Type', type: 'select', options: LOOKUPS.returnTypes },
+        { key: 'OnlineRequirementId', label: 'Online Requirement', type: 'select', options: LOOKUPS.onlineRequirements },
+
+        { key: 'FileName', label: 'File Name', type: 'text', readOnly: true },
+        { key: 'DocumentReference', label: 'Document Reference', type: 'text', readOnly: true },
+        { key: 'Notes', label: 'Notes', type: 'textarea', fullWidth: true, placeholder: 'Optional notes…' }
+    ];
+
+NOTES:
+  • 'MailCenterId' stays AS-IS in the frontend because we are fixing the
+    naming on the BACKEND (clean approach, Change #4). After the backend
+    rename, MailCenterId will hold the INT and this key will be correct.
+  • FormTypeId vs PoaFormTypeId: the live console.log shows the wire
+    property is currently "FormTypeId". If, when applying Change #4, you
+    also rename it to PoaFormTypeId on the backend flattener + DTO, then
+    use 'PoaFormTypeId' here instead. WHICHEVER NAME IS ON THE WIRE IS THE
+    NAME THE KEY MUST USE. Pick one convention and apply it end to end.
+
+
+───────────────────────────────────────────────────────────────────────────────
+ 3. CHANGE #2 — editSections (frontend, same file)
+───────────────────────────────────────────────────────────────────────────────
+
+WHY: sections resolve fields by exact string match:
+    cfg.editFields.find(function (f) { return f.key === fkey; })
+If a section still lists the old name, find() returns nothing and the field
+silently drops out of its section (this is why FormUseId "disappeared" when
+only editFields was renamed).
+
+BEFORE:
+    var editSections = [
+        { title: 'Template Info', fields: ['Description', 'State', 'MailCenterId', 'Active'] },
+        { title: 'Classification', fields: ['ServiceType', 'FormType', 'FormUse', 'PoaType'] },
+        { title: 'Processing Rules', fields: ['SignatureType', 'ReturnType', 'OnlineRequirement'] },
+        { title: 'Document', fields: ['FileName', 'DocumentReference'], isDocumentSection: true },
+        { title: 'Notes', fields: ['Notes'] }
+    ];
+
+AFTER:
+    var editSections = [
+        { title: 'Template Info', fields: ['Description', 'State', 'MailCenterId', 'Active'] },
+        { title: 'Classification', fields: ['ServiceTypeId', 'FormTypeId', 'FormUseId', 'PoaTypeId'] },
+        { title: 'Processing Rules', fields: ['SignatureTypeId', 'ReturnTypeId', 'OnlineRequirementId'] },
+        { title: 'Document', fields: ['FileName', 'DocumentReference'], isDocumentSection: true },
+        { title: 'Notes', fields: ['Notes'] }
+    ];
+
+  (Again: if you standardize on PoaFormTypeId in Change #4, use it here too.)
+
+
+───────────────────────────────────────────────────────────────────────────────
+ 4. CHANGE #3 — onSave DTO builder (frontend, same file)
+───────────────────────────────────────────────────────────────────────────────
+
+The ...Id reads were already correct here. Only verify two things:
+
+  a) MailCenterId — after the backend rename (Change #4), e.record.MailCenterId
+     holds the INT, so this line is correct as-is:
+
+         MailCenterId: parseInt(e.record.MailCenterId, 10) || null,
+
+     ⚠ If you were to keep the current inverted backend naming instead
+     (NOT recommended), this line would have to read MailCenterIdInt:
+
+         MailCenterId: parseInt(e.record.MailCenterIdInt, 10) || null,
+
+  b) FormType — make the property read match the key you chose:
+
+     If key = 'FormTypeId':
+         FormTypeId: parseInt(e.record.FormTypeId, 10) || null,
+         (and the DTO class must have int? FormTypeId)
+
+     If key = 'PoaFormTypeId':
+         PoaFormTypeId: parseInt(e.record.PoaFormTypeId, 10) || null,
+         (and the DTO class must have int? PoaFormTypeId)
+
+FULL AFTER (assuming FormTypeId convention + backend MailCenter rename done):
+
+    var dto = {
+        Id: e.record.Id || 0,
+        Description: e.record.Description || '',
+        State: e.record.State || '',
+        Active: e.record.Active === true || e.record.Active === 'true' || e.record.Active === 'on',
+        MailCenterId: parseInt(e.record.MailCenterId, 10) || null,
+
+        ServiceTypeId: parseInt(e.record.ServiceTypeId, 10) || null,
+        FormTypeId: parseInt(e.record.FormTypeId, 10) || null,
+        FormUseId: parseInt(e.record.FormUseId, 10) || null,
+        PoaTypeId: parseInt(e.record.PoaTypeId, 10) || null,
+        SignatureTypeId: parseInt(e.record.SignatureTypeId, 10) || null,
+        ReturnTypeId: parseInt(e.record.ReturnTypeId, 10) || null,
+        OnlineRequirementId: parseInt(e.record.OnlineRequirementId, 10) || null,
+
+        DocumentReference: e.record.DocumentReference || '',
+        FileName: e.record.FileName || '',
+        FileExtension: e.record.FileExtension || '',
+        Notes: e.record.Notes || ''
+    };
+
+
+───────────────────────────────────────────────────────────────────────────────
+ 5. CHANGE #4 — CLEAN MAILCENTER FIX (BACKEND: flattener + DTO + repo)
+───────────────────────────────────────────────────────────────────────────────
+
+PROBLEM
+  Every lookup field follows the convention:
+      <Name>        = display string   (ServiceType = "ADP - UCM")
+      <Name>Id      = numeric FK       (ServiceTypeId = 8)
+  Mail Center is the ONE inverted exception:
+      MailCenterId     = display string  ("Londonderry Office")  ← WRONG
+      MailCenterIdInt  = numeric FK      (2)                     ← WRONG
+  This forces a special case in the frontend and will keep biting anyone who
+  touches this page. Fix the names at the source so ALL fields follow the
+  same convention.
+
+TARGET CONVENTION
+      MailCenter    = "Londonderry Office"    (string, no suffix)
+      MailCenterId  = 2                       (int FK, Id suffix)
+
+──────────────── 5a. GetPage flattener (WebMethod, code-behind) ──────────────
+
+BEFORE (from the .Select projection):
+        x.MailCenterId,          // string  "Londonderry Office"  ← misnamed
+        x.MailCenterIdInt,       // int     2                     ← misnamed
+
+AFTER:
+        MailCenter = x.MailCenterId,        // temp: read old model prop into new name
+        MailCenterId = x.MailCenterIdInt,   // temp: read old model prop into new name
+
+  …or, once the model/repo props are also renamed (5c), simply:
+
+        x.MailCenter,            // string
+        x.MailCenterId,          // int
+
+──────────────── 5b. PoaFormDto ─────────────────────────────────────────────
+
+BEFORE:
+        public int? MailCenterId { get; set; }
+        // (if a string MailCenterId or MailCenterIdInt variant exists, remove it)
+
+AFTER:
+        public int? MailCenterId { get; set; }   // int FK — the only one the DTO needs
+
+  The DTO only ever needs the FK int for insert/update. The display string
+  is a read-path concern (flattener) — it should NOT be on the DTO at all.
+
+──────────────── 5c. Repository / model projection ──────────────────────────
+
+Wherever GetAllForms projects the mail center (the repo/service .Select):
+
+BEFORE:
+        MailCenterId    = mc.mail_center_description,    // string in Id-named prop
+        MailCenterIdInt = pf.mail_center_id,             // int in IdInt prop
+
+AFTER:
+        MailCenter   = mc.mail_center_description,       // string, no suffix
+        MailCenterId = pf.mail_center_id,                // int FK, Id suffix
+
+And on the model class:
+
+BEFORE:
+        public string MailCenterId    { get; set; }   // display string  ← misnamed
+        public int?   MailCenterIdInt { get; set; }   // FK int          ← misnamed
+
+AFTER:
+        public string MailCenter   { get; set; }      // display string
+        public int?   MailCenterId { get; set; }      // FK int
+
+──────────────── 5d. Insert/Update mapping (server) ─────────────────────────
+
+Wherever the entity is built from the DTO — no change needed IF it already
+reads form.MailCenterId as an int:
+
+        mail_center_id = form.MailCenterId,       // stays the same
+
+  Just confirm nothing was parsing the old string prop.
+
+──────────────── 5e. Search the solution for stragglers ─────────────────────
+
+Grep the whole solution (C# and JS) for:
+        MailCenterIdInt
+Every hit must be renamed or removed. When the grep returns ZERO results,
+the inverted naming is fully gone.
+
+
+───────────────────────────────────────────────────────────────────────────────
+ 6. OTHER PLACES TO GREP BEFORE CALLING IT DONE (frontend)
+───────────────────────────────────────────────────────────────────────────────
+
+Search the production ASPX JS for the literal old key strings:
+
+    'ServiceType'   'FormType'   'FormUse'   'PoaType'
+    'SignatureType' 'ReturnType' 'OnlineRequirement'
+    'MailCenterIdInt'
+
+Check every hit against this list:
+  □ columns[] (collapsed-row display)   — key/badge.map/format on old names?
+  □ filterField / filterOptions          — only 'State' expected; confirm
+  □ any field onChange callbacks         — keyed on old names?
+  □ grid.updateRecord(id, {...}) patches — after Insert/Update/Extract polling,
+    a patch writing to an old property name updates a dead field the UI no
+    longer reads
+  □ any console.log/debug code that masks the rename
+
+NOTE: leaving the string props (ServiceType, FormUse, …) ON the record is
+fine and harmless — nothing forces you to strip them from GetPage. They just
+must not be what the editField keys point at.
+
+
+───────────────────────────────────────────────────────────────────────────────
+ 7. VERIFICATION CHECKLIST
+───────────────────────────────────────────────────────────────────────────────
+
+  □ Arrow-expand a row (view mode): every field shows the correct label
+    (now via a REAL option match, not the fallback echo)
+  □ Click Edit on the same row: every dropdown pre-selects the record's
+    actual value — NOT the first option
+  □ Change one dropdown, Save: UpdateForm receives the correct int FK
+    (check Network tab request body — no nulls where values were set)
+  □ Re-open the row after save: new value persisted and pre-selects
+  □ Add New: all dropdowns work, insert sends correct FKs
+  □ Mail Center specifically: view shows office name, edit pre-selects the
+    right office, DTO carries the int
+  □ Grep 'MailCenterIdInt' across solution → 0 results
+
+═══════════════════════════════════════════════════════════════════════════════
+ END
+═══════════════════════════════════════════════════════════════════════════════
