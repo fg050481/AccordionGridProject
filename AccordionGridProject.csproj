@@ -71,6 +71,7 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="Default.aspx" />
+    <Content Include="Diagrams\AccordionGrid-Flow-Diagram.svg" />
     <Content Include="Readme\LookupImplementation.txt" />
     <Content Include="Readme\POA Grid ExtractionFlow 2026_06_25.txt" />
     <Content Include="Readme\POA-Grid-EditFields-Id-Suffix-Fix-2026-07-04.txt" />
@@ -78,6 +79,7 @@
     <Content Include="Scripts\AccordionGrid.js" />
     <Content Include="Web.config" />
     <Content Include="_dev-tracking\POA-Grid-AccordionGrid-ChangeLog-2026-06-24.txt" />
+    <Content Include="_dev-tracking\POA-Grid-AccordionGrid-Reference-2026-07-05.txt" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Default.aspx.cs">

@@ -1,0 +1,261 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1480" height="2020" viewBox="0 0 1480 2020" font-family="Segoe UI, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 z" fill="#4a5048"/>
+    </marker>
+    <marker id="arrowG" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 z" fill="#2e7d2e"/>
+    </marker>
+    <marker id="arrowR" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 z" fill="#c0392b"/>
+    </marker>
+    <linearGradient id="hdr" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2e7d2e"/><stop offset="1" stop-color="#236122"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1480" height="2020" fill="#f4f5f6"/>
+
+  <!-- Title -->
+  <text x="740" y="46" text-anchor="middle" font-size="26" font-weight="700" fill="#1a1e1a">AccordionGrid.js — Component Flow</text>
+  <text x="740" y="72" text-anchor="middle" font-size="13" fill="#7a837a">Server-side pagination · View vs Edit modes · Save pipeline · Document upload gate</text>
+
+  <!-- ══════════ SWIMLANE HEADERS ══════════ -->
+  <rect x="30"  y="100" width="440" height="40" rx="6" fill="url(#hdr)"/>
+  <text x="250" y="126" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">SERVER — Default.aspx.cs (C#)</text>
+
+  <rect x="510" y="100" width="440" height="40" rx="6" fill="url(#hdr)"/>
+  <text x="730" y="126" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">PAGE JS — Default.aspx (config + callbacks)</text>
+
+  <rect x="990" y="100" width="460" height="40" rx="6" fill="url(#hdr)"/>
+  <text x="1220" y="126" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">COMPONENT — AccordionGrid.js</text>
+
+  <!-- lane guides -->
+  <line x1="490" y1="150" x2="490" y2="1960" stroke="#d4d8db" stroke-dasharray="4 5"/>
+  <line x1="970" y1="150" x2="970" y2="1960" stroke="#d4d8db" stroke-dasharray="4 5"/>
+
+  <!-- ══════════ PHASE 1 — INITIAL LOAD ══════════ -->
+  <rect x="30" y="165" width="1420" height="30" rx="4" fill="#eaf3ea"/>
+  <text x="45" y="185" font-size="14" font-weight="700" fill="#236122">1 · PAGE LOAD — first page + lookups delivered to the browser</text>
+
+  <!-- Server boxes -->
+  <rect x="60" y="215" width="380" height="66" rx="5" fill="#fff" stroke="#d4d8db"/>
+  <text x="75" y="238" font-size="13" font-weight="700" fill="#1a1e1a">Page_Load → LoadFirstPage()</text>
+  <text x="75" y="256" font-size="12" fill="#4a5048" font-family="Consolas, monospace">FlattenRecords(page 1)  +  totalCount</text>
+  <text x="75" y="272" font-size="12" fill="#4a5048" font-family="Consolas, monospace">LoadLookups() → { value: FK id, label }</text>
+
+  <rect x="60" y="300" width="380" height="52" rx="5" fill="#fff" stroke="#d4d8db"/>
+  <text x="75" y="322" font-size="13" font-weight="700" fill="#1a1e1a">Deliver as JSON</text>
+  <text x="75" y="340" font-size="12" fill="#4a5048" font-family="Consolas, monospace">HiddenGridData · HiddenLookups (primary)</text>
+
+  <!-- Page JS boxes -->
+  <rect x="540" y="215" width="380" height="66" rx="5" fill="#fff" stroke="#d4d8db"/>
+  <text x="555" y="238" font-size="13" font-weight="700" fill="#1a1e1a">Read hidden fields → LOOKUPS, initial</text>
+  <text x="555" y="256" font-size="12" fill="#4a5048" font-family="Consolas, monospace">JSON.parse(HiddenLookups.value)</text>
+  <text x="555" y="272" font-size="12" fill="#4a5048" font-family="Consolas, monospace">fallback: window.poaLookups</text>
+
+  <rect x="540" y="300" width="380" height="82" rx="5" fill="#fff" stroke="#2e7d2e" stroke-width="1.5"/>
+  <text x="555" y="322" font-size="13" font-weight="700" fill="#236122">AccordionGrid.create('poaGrid', config)</text>
+  <text x="555" y="340" font-size="12" fill="#4a5048" font-family="Consolas, monospace">columns · editFields · editSections</text>
+  <text x="555" y="356" font-size="12" fill="#4a5048" font-family="Consolas, monospace">actionButtons · dataLoader · onSave …</text>
+  <text x="555" y="372" font-size="12" fill="#4a5048" font-family="Consolas, monospace">grid.loadData(initial.items)</text>
+
+  <!-- Component box -->
+  <rect x="1020" y="270" width="400" height="82" rx="5" fill="#fff" stroke="#d4d8db"/>
+  <text x="1035" y="293" font-size="13" font-weight="700" fill="#1a1e1a">Render shell + page 1</text>
+  <text x="1035" y="311" font-size="12" fill="#4a5048" font-family="Consolas, monospace">injectCSS · title bar · toolbar · header</text>
+  <text x="1035" y="327" font-size="12" fill="#4a5048" font-family="Consolas, monospace">_allData = page slice only (10–50 rows)</text>
+  <text x="1035" y="343" font-size="12" fill="#4a5048" font-family="Consolas, monospace">pager uses _serverTotalCount</text>
+
+  <!-- arrows phase 1 -->
+  <line x1="250" y1="281" x2="250" y2="300" stroke="#4a5048" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="440" y1="326" x2="540" y2="248" stroke="#4a5048" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="730" y1="281" x2="730" y2="300" stroke="#4a5048" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="920" y1="341" x2="1020" y2="311" stroke="#2e7d2e" stroke-width="1.5" marker-end="url(#arrowG)"/>
+
+  <!-- ══════════ PHASE 2 — INTERACTION LOOP ══════════ -->
+  <rect x="30" y="420" width="1420" height="30" rx="4" fill="#eaf3ea"/>
+  <text x="45" y="440" font-size="14" font-weight="700" fill="#236122">2 · EVERY page / search / sort / filter — server-side loop via dataLoader</text>
+
+  <rect x="1020" y="470" width="400" height="66" rx="5" fill="#fff" stroke="#d4d8db"/>
+  <text x="1035" y="493" font-size="13" font-weight="700" fill="#1a1e1a">User interacts → _apply()</text>
+  <text x="1035" y="511" font-size="12" fill="#4a5048" font-family="Consolas, monospace">_buildParams(): { page, pageSize,</text>
+  <text x="1035" y="527" font-size="12" fill="#4a5048" font-family="Consolas, monospace">  search, filter, sortKey, sortDir }</text>
+
+  <rect x="540" y="470" width="380" height="66" rx="5" fill="#fff" stroke="#d4d8db"/>
+  <text x="555" y="493" font-size="13" font-weight="700" fill="#1a1e1a">dataLoader(params, done)</text>
+  <text x="555" y="511" font-size="12" fill="#4a5048" font-family="Consolas, monospace">fetch('Default.aspx/GetPage')</text>
+  <text x="555" y="527" font-size="12" fill="#4a5048" font-family="Consolas, monospace">unwrap { d: "json" } wrapper</text>
+
+  <rect x="60" y="470" width="380" height="66" rx="5" fill="#fff" stroke="#d4d8db"/>
+  <text x="75" y="493" font-size="13" font-weight="700" fill="#1a1e1a">[WebMethod] GetPage(…)</text>
+  <text x="75" y="511" font-size="12" fill="#4a5048" font-family="Consolas, monospace">SQL Skip/Take → one page slice</text>
+  <text x="75" y="527" font-size="12" fill="#4a5048" font-family="Consolas, monospace">return { items, totalCount }</text>
+
+  <rect x="1020" y="565" width="400" height="50" rx="5" fill="#fff" stroke="#d4d8db"/>
+  <text x="1035" y="587" font-size="13" font-weight="700" fill="#1a1e1a">done(items) → render new slice</text>
+  <text x="1035" y="604" font-size="12" fill="#4a5048" font-family="Consolas, monospace">DOM never holds more than one page</text>
+
+  <line x1="1020" y1="503" x2="920" y2="503" stroke="#4a5048" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="540" y1="503" x2="440" y2="503" stroke="#4a5048" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="440" y1="522" x2="540" y2="522" stroke="#2e7d2e" stroke-width="1.5" marker-end="url(#arrowG)"/>
+  <line x1="920" y1="522" x2="1020" y2="580" stroke="#2e7d2e" stroke-width="1.5" marker-end="url(#arrowG)"/>
+
+  <!-- ══════════ PHASE 3 — VIEW vs EDIT ══════════ -->
+  <rect x="30" y="655" width="1420" height="30" rx="4" fill="#eaf3ea"/>
+  <text x="45" y="675" font-size="14" font-weight="700" fill="#236122">3 · ROW EXPAND — two entry points, one data source: record[field.key]</text>
+
+  <!-- entry points -->
+  <rect x="540" y="705" width="180" height="54" rx="5" fill="#fff" stroke="#d4d8db"/>
+  <text x="630" y="727" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1e1a">▶ Arrow click</text>
+  <text x="630" y="746" text-anchor="middle" font-size="11.5" fill="#7a837a">(handled inside component)</text>
+
+  <rect x="740" y="705" width="180" height="54" rx="5" fill="#fff" stroke="#d4d8db"/>
+  <text x="830" y="727" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1e1a">Edit button</text>
+  <text x="830" y="746" text-anchor="middle" font-size="11.5" fill="#7a837a" font-family="Consolas, monospace">expandRowForEdit(id)</text>
+
+  <rect x="1020" y="700" width="400" height="64" rx="5" fill="#fff" stroke="#d4d8db"/>
+  <text x="1035" y="723" font-size="13" font-weight="700" fill="#1a1e1a">_setExpanded(id, open, editMode)</text>
+  <text x="1035" y="741" font-size="12" fill="#4a5048" font-family="Consolas, monospace">_editMode[id] = false (arrow) / true (Edit)</text>
+  <text x="1035" y="757" font-size="12" fill="#4a5048" font-family="Consolas, monospace">_editBuffer[id] = deepClone(record)</text>
+
+  <line x1="630" y1="759" x2="1035" y2="790" stroke="#4a5048" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="830" y1="759" x2="1140" y2="790" stroke="#4a5048" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="920" y1="732" x2="1020" y2="732" stroke="#4a5048" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- two render paths -->
+  <rect x="1000" y="795" width="215" height="118" rx="5" fill="#f8fbf8" stroke="#2e7d2e"/>
+  <text x="1107" y="818" text-anchor="middle" font-size="13" font-weight="700" fill="#236122">VIEW MODE</text>
+  <text x="1107" y="836" text-anchor="middle" font-size="11.5" fill="#4a5048" font-family="Consolas, monospace">buildViewFieldHtml</text>
+  <text x="1010" y="856" font-size="11.5" fill="#4a5048">val = record[field.key]</text>
+  <text x="1010" y="872" font-size="11.5" fill="#4a5048">match option → print label</text>
+  <text x="1010" y="888" font-size="11.5" fill="#c0392b">no match → echoes raw val</text>
+  <text x="1010" y="904" font-size="11.5" fill="#c0392b">(hides wrong-key bugs!)</text>
+
+  <rect x="1230" y="795" width="215" height="118" rx="5" fill="#f8fbf8" stroke="#2e7d2e"/>
+  <text x="1337" y="818" text-anchor="middle" font-size="13" font-weight="700" fill="#236122">EDIT MODE</text>
+  <text x="1337" y="836" text-anchor="middle" font-size="11.5" fill="#4a5048" font-family="Consolas, monospace">buildFieldHtml</text>
+  <text x="1240" y="856" font-size="11.5" fill="#4a5048">real inputs / selects</text>
+  <text x="1240" y="872" font-size="11.5" fill="#4a5048">option.value === val → selected</text>
+  <text x="1240" y="888" font-size="11.5" fill="#c0392b">no match → browser shows</text>
+  <text x="1240" y="904" font-size="11.5" fill="#c0392b">FIRST option (the bug)</text>
+
+  <!-- key rule callout -->
+  <rect x="540" y="800" width="380" height="110" rx="5" fill="#fff8e1" stroke="#d8c060"/>
+  <text x="555" y="824" font-size="13" font-weight="700" fill="#7c5e00">⚠ KEY RULE — one name, three places</text>
+  <text x="555" y="845" font-size="12" fill="#5a4a10" font-family="Consolas, monospace">key: 'FormUseId'  reads  record.FormUseId</text>
+  <text x="555" y="864" font-size="12" fill="#5a4a10">Select keys must be the numeric FK (…Id),</text>
+  <text x="555" y="881" font-size="12" fill="#5a4a10">identical in editFields, editSections,</text>
+  <text x="555" y="898" font-size="12" fill="#5a4a10">and the onSave DTO builder.</text>
+
+  <!-- ══════════ PHASE 4 — SAVE PIPELINE ══════════ -->
+  <rect x="30" y="950" width="1420" height="30" rx="4" fill="#eaf3ea"/>
+  <text x="45" y="970" font-size="14" font-weight="700" fill="#236122">4 · SAVE — from inputs back to the database</text>
+
+  <rect x="1020" y="1000" width="400" height="82" rx="5" fill="#fff" stroke="#d4d8db"/>
+  <text x="1035" y="1023" font-size="13" font-weight="700" fill="#1a1e1a">Save clicked</text>
+  <text x="1035" y="1041" font-size="12" fill="#4a5048" font-family="Consolas, monospace">_collectFormValues → _editBuffer[id]</text>
+  <text x="1035" y="1057" font-size="12" fill="#4a5048" font-family="Consolas, monospace">Object.assign(record, buffer) · collapse</text>
+  <text x="1035" y="1073" font-size="12" fill="#4a5048" font-family="Consolas, monospace">fire onSave({ record, isNew })</text>
+
+  <rect x="540" y="1000" width="380" height="98" rx="5" fill="#fff" stroke="#d4d8db"/>
+  <text x="555" y="1023" font-size="13" font-weight="700" fill="#1a1e1a">onSave → build clean DTO</text>
+  <text x="555" y="1041" font-size="12" fill="#4a5048" font-family="Consolas, monospace">parseInt(e.record.ServiceTypeId) …</text>
+  <text x="555" y="1057" font-size="12" fill="#4a5048" font-family="Consolas, monospace">Active coerced to bool</text>
+  <text x="555" y="1073" font-size="12" fill="#4a5048" font-family="Consolas, monospace">wrap as { form: dto }  ← param binding</text>
+  <text x="555" y="1090" font-size="12" fill="#4a5048" font-family="Consolas, monospace">isNew ? InsertForm : UpdateForm</text>
+
+  <rect x="60" y="1000" width="380" height="82" rx="5" fill="#fff" stroke="#d4d8db"/>
+  <text x="75" y="1023" font-size="13" font-weight="700" fill="#1a1e1a">[WebMethod] Insert / Update (PoaFormDto)</text>
+  <text x="75" y="1041" font-size="12" fill="#4a5048" font-family="Consolas, monospace">entity.service_type_id = form.ServiceTypeId</text>
+  <text x="75" y="1057" font-size="12" fill="#4a5048" font-family="Consolas, monospace">returns { Id?, LastUpdated }</text>
+
+  <rect x="540" y="1120" width="380" height="50" rx="5" fill="#fff" stroke="#d4d8db"/>
+  <text x="555" y="1142" font-size="13" font-weight="700" fill="#1a1e1a">grid.updateRecord(agId, { Id, LastUpdated })</text>
+  <text x="555" y="1160" font-size="12" fill="#4a5048" font-family="Consolas, monospace">re-renders locally — no server round-trip</text>
+
+  <line x1="1020" y1="1041" x2="920" y2="1041" stroke="#4a5048" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="540" y1="1041" x2="440" y2="1041" stroke="#4a5048" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="440" y1="1062" x2="540" y2="1130" stroke="#2e7d2e" stroke-width="1.5" marker-end="url(#arrowG)"/>
+
+  <!-- ══════════ PHASE 5 — ADD NEW + UPLOAD GATE ══════════ -->
+  <rect x="30" y="1210" width="1420" height="30" rx="4" fill="#eaf3ea"/>
+  <text x="45" y="1230" font-size="14" font-weight="700" fill="#236122">5 · ADD NEW — document upload gates the insert</text>
+
+  <rect x="1020" y="1260" width="400" height="98" rx="5" fill="#fff" stroke="#d4d8db"/>
+  <text x="1035" y="1283" font-size="13" font-weight="700" fill="#1a1e1a">+ Add New → _buildAddPanel</text>
+  <text x="1035" y="1301" font-size="12" fill="#4a5048" font-family="Consolas, monospace">choose file → validate ext + MIME + size</text>
+  <text x="1035" y="1317" font-size="12" fill="#4a5048" font-family="Consolas, monospace">Save LOCKED until upload returns a GUID</text>
+  <text x="1035" y="1333" font-size="12" fill="#4a5048" font-family="Consolas, monospace">"Upload to Storage" → _doUpload</text>
+  <text x="1035" y="1349" font-size="12" fill="#4a5048" font-family="Consolas, monospace">progress % via XHR upload events</text>
+
+  <rect x="540" y="1260" width="380" height="82" rx="5" fill="#fff" stroke="#d4d8db"/>
+  <text x="555" y="1283" font-size="13" font-weight="700" fill="#1a1e1a">onUploadDocument(file, progress, done)</text>
+  <text x="555" y="1301" font-size="12" fill="#4a5048" font-family="Consolas, monospace">XHR POST multipart/form-data</text>
+  <text x="555" y="1317" font-size="12" fill="#4a5048" font-family="Consolas, monospace">→ UploadDocument.ashx (not WebMethod!)</text>
+  <text x="555" y="1333" font-size="12" fill="#4a5048" font-family="Consolas, monospace">done(null, guid)</text>
+
+  <rect x="60" y="1260" width="380" height="66" rx="5" fill="#fff" stroke="#d4d8db"/>
+  <text x="75" y="1283" font-size="13" font-weight="700" fill="#1a1e1a">UploadDocument.ashx</text>
+  <text x="75" y="1301" font-size="12" fill="#4a5048" font-family="Consolas, monospace">Azure Blob store → returns { guid }</text>
+  <text x="75" y="1317" font-size="12" fill="#4a5048" font-family="Consolas, monospace">or { error }</text>
+
+  <rect x="1020" y="1380" width="400" height="66" rx="5" fill="#fff" stroke="#2e7d2e" stroke-width="1.5"/>
+  <text x="1035" y="1403" font-size="13" font-weight="700" fill="#236122">GUID received → Save unlocks</text>
+  <text x="1035" y="1421" font-size="12" fill="#4a5048" font-family="Consolas, monospace">_finaliseInsert re-applies guid + FileName</text>
+  <text x="1035" y="1437" font-size="12" fill="#4a5048" font-family="Consolas, monospace">from _uploadState → fires onSave(isNew)</text>
+
+  <line x1="1020" y1="1301" x2="920" y2="1301" stroke="#4a5048" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="540" y1="1295" x2="440" y2="1295" stroke="#4a5048" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="440" y1="1312" x2="540" y2="1325" stroke="#2e7d2e" stroke-width="1.5" marker-end="url(#arrowG)"/>
+  <line x1="920" y1="1330" x2="1020" y2="1400" stroke="#2e7d2e" stroke-width="1.5" marker-end="url(#arrowG)"/>
+
+  <!-- ══════════ PHASE 6 — ACTION BUTTONS ══════════ -->
+  <rect x="30" y="1490" width="1420" height="30" rx="4" fill="#eaf3ea"/>
+  <text x="45" y="1510" font-size="14" font-weight="700" fill="#236122">6 · ACTION BUTTONS — component fires, page routes, server acts</text>
+
+  <rect x="1020" y="1540" width="400" height="50" rx="5" fill="#fff" stroke="#d4d8db"/>
+  <text x="1035" y="1562" font-size="13" font-weight="700" fill="#1a1e1a">any action btn → onActionClick</text>
+  <text x="1035" y="1580" font-size="12" fill="#4a5048" font-family="Consolas, monospace">{ action, id, record }</text>
+
+  <rect x="540" y="1540" width="380" height="164" rx="5" fill="#fff" stroke="#d4d8db"/>
+  <text x="555" y="1563" font-size="13" font-weight="700" fill="#1a1e1a">switch (e.action)</text>
+  <text x="555" y="1584" font-size="12" fill="#4a5048" font-family="Consolas, monospace">edit     → expandRowForEdit(id)</text>
+  <text x="555" y="1602" font-size="12" fill="#4a5048" font-family="Consolas, monospace">extract  → TriggerExtraction + poll 5s</text>
+  <text x="555" y="1620" font-size="12" fill="#4a5048" font-family="Consolas, monospace">map      → TriggerMapping</text>
+  <text x="555" y="1638" font-size="12" fill="#4a5048" font-family="Consolas, monospace">generate → GenerateDocument</text>
+  <text x="555" y="1656" font-size="12" fill="#4a5048" font-family="Consolas, monospace">download → DownloadDocument.ashx iframe</text>
+  <text x="555" y="1674" font-size="12" fill="#4a5048" font-family="Consolas, monospace">delete   → DeleteForm, remove row only</text>
+  <text x="555" y="1691" font-size="12" fill="#4a5048" font-family="Consolas, monospace">           after server Success:true</text>
+
+  <rect x="60" y="1540" width="380" height="98" rx="5" fill="#fff" stroke="#d4d8db"/>
+  <text x="75" y="1563" font-size="13" font-weight="700" fill="#1a1e1a">[WebMethod]s + .ashx handlers</text>
+  <text x="75" y="1581" font-size="12" fill="#4a5048" font-family="Consolas, monospace">TriggerExtraction → JobId, "In Progress"</text>
+  <text x="75" y="1597" font-size="12" fill="#4a5048" font-family="Consolas, monospace">GetExtractionStatus (polled, max 2 min)</text>
+  <text x="75" y="1613" font-size="12" fill="#4a5048" font-family="Consolas, monospace">DeleteForm → { Success: true }</text>
+  <text x="75" y="1629" font-size="12" fill="#4a5048" font-family="Consolas, monospace">DownloadDocument.ashx → blob stream</text>
+
+  <line x1="1020" y1="1565" x2="920" y2="1565" stroke="#4a5048" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="540" y1="1600" x2="440" y2="1580" stroke="#4a5048" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="440" y1="1600" x2="540" y2="1625" stroke="#2e7d2e" stroke-width="1.5" marker-end="url(#arrowG)"/>
+
+  <!-- badge update loop -->
+  <rect x="1020" y="1620" width="400" height="50" rx="5" fill="#fff" stroke="#d4d8db"/>
+  <text x="1035" y="1642" font-size="13" font-weight="700" fill="#1a1e1a">grid.updateRecord(id, { Status })</text>
+  <text x="1035" y="1660" font-size="12" fill="#4a5048" font-family="Consolas, monospace">badge re-renders instantly, no refetch</text>
+  <line x1="920" y1="1660" x2="1020" y2="1645" stroke="#2e7d2e" stroke-width="1.5" marker-end="url(#arrowG)"/>
+
+  <!-- ══════════ LEGEND / STATE SUMMARY ══════════ -->
+  <rect x="30" y="1745" width="1420" height="30" rx="4" fill="#eaf3ea"/>
+  <text x="45" y="1765" font-size="14" font-weight="700" fill="#236122">INTERNAL STATE — what the component tracks per row</text>
+
+  <rect x="60" y="1795" width="1360" height="150" rx="5" fill="#fff" stroke="#d4d8db"/>
+  <text x="80" y="1822" font-size="12.5" fill="#1a1e1a" font-family="Consolas, monospace"><tspan font-weight="700">_allData</tspan>            current page slice only (server-side mode) — never the whole dataset</text>
+  <text x="80" y="1844" font-size="12.5" fill="#1a1e1a" font-family="Consolas, monospace"><tspan font-weight="700">_serverTotalCount</tspan>   true total from GetPage — drives the pager math</text>
+  <text x="80" y="1866" font-size="12.5" fill="#1a1e1a" font-family="Consolas, monospace"><tspan font-weight="700">_expanded[id]</tspan>       row open?    <tspan font-weight="700">_editMode[id]</tspan>  view (false) or edit (true)</text>
+  <text x="80" y="1888" font-size="12.5" fill="#1a1e1a" font-family="Consolas, monospace"><tspan font-weight="700">_editBuffer[id]</tspan>     deepClone draft — Cancel discards it, Save merges it into the record</text>
+  <text x="80" y="1910" font-size="12.5" fill="#1a1e1a" font-family="Consolas, monospace"><tspan font-weight="700">_uploadState</tspan>        { file, guid, uploading, progress, error } — guid gates the insert</text>
+  <text x="80" y="1932" font-size="12.5" fill="#c0392b" font-family="Consolas, monospace"><tspan font-weight="700">field.key</tspan>           the contract: must match the wire property name EXACTLY, everywhere</text>
+
+  <text x="740" y="1990" text-anchor="middle" font-size="11.5" fill="#7a837a">AccordionGrid v1.0.1 · zero dependencies · ASP.NET WebForms 4.8 · green arrows = data flowing back toward the UI</text>
+</svg>

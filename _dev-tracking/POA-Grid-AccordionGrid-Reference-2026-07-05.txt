@@ -1,0 +1,361 @@
+═══════════════════════════════════════════════════════════════════════════════
+ POA FORM MANAGEMENT — ACCORDION GRID
+ COMPONENT REFERENCE: Completed Functionality + Configuration Guide
+ AccordionGrid.js v1.0.1 · Zero dependencies · ASP.NET WebForms 4.8
+ Date: 2026-07-05
+═══════════════════════════════════════════════════════════════════════════════
+
+
+───────────────────────────────────────────────────────────────────────────────
+ PART 1 — COMPLETED FUNCTIONALITY
+───────────────────────────────────────────────────────────────────────────────
+
+CORE GRID
+  ✔ Self-contained: embedded CSS (injected once as #ag-styles), no jQuery,
+    no external libraries. Single JS file drop-in.
+  ✔ Configurable columns: width, align, sortable, visible, custom format
+    functions, badge maps (success/warning/danger/info/default).
+  ✔ Column sorting with direction toggle and header sort indicators.
+  ✔ Search box (debounced 250ms, Escape clears) + filter dropdown
+    (filterField + filterOptions).
+  ✔ Pagination: page buttons (max 7 with ellipsis), prev/next, page-size
+    selector (pageSizeOptions), record range display ("11–20 of 78").
+  ✔ Title bar with live record count, Refresh button (resetState — clears
+    search/filter/sort/expanded rows, resets DOM controls, reloads page 1),
+    Add New button.
+  ✔ Empty state message, loading overlay (_showLoading), ARIA roles on
+    rows/cells/headers, keyboard support on expanders (Enter/Space).
+  ✔ Responsive: columns collapse on mobile except expand/description/actions.
+
+SERVER-SIDE MODE (dataLoader) — the production configuration
+  ✔ When dataLoader is configured, the SERVER owns paging, search, sort,
+    filter. _apply() calls dataLoader(params, done) with:
+        { page, pageSize, search, filter, sortKey, sortDir }
+  ✔ Pager uses _serverTotalCount (set from GetPage's totalCount) — total can
+    be any size; the DOM only ever renders one page slice.
+  ✔ updateRecord / removeRecord skip the dataLoader re-fetch and re-render
+    locally (so patches like LastUpdated/status badges apply instantly).
+  ✔ Scales to 10,000+ records — bottleneck is the SQL Skip/Take query, not JS.
+  ✔ Initial page 1 delivered via HiddenGridData hidden field (+ 
+    window.poaInitialData fallback); every later interaction hits GetPage.
+
+ROW EXPANSION — VIEW vs EDIT
+  ✔ Arrow (▶) click  → read-only view panel (buildViewFieldHtml):
+      labels + static text, selects resolved to their option label,
+      checkboxes shown as ✓/empty, single Close button.
+  ✔ Edit action button → expandRowForEdit(id) → full edit panel
+    (buildFieldHtml): real inputs/selects/textareas, Save/Cancel/Delete bar.
+  ✔ singleExpand option: only one row open at a time.
+  ✔ Per-row draft state: _editBuffer[id] = deepClone(record). Cancel discards
+    the buffer (record untouched); Save merges buffer → record → fires onSave.
+  ✔ expandMode: 'edit' (default panel behaviour) | 'quickview' (compact
+    label:value list with an Edit switch button).
+
+ADD NEW + DOCUMENT UPLOAD GATE
+  ✔ Add panel above the grid, built from the same editFields/editSections.
+  ✔ PDF upload widget auto-injected into the section flagged
+    isDocumentSection: true (or after fields when no sections).
+  ✔ Client-side validation BEFORE upload: extension whitelist
+    (uploadAllowedExtensions), MIME cross-check, max size (uploadMaxSizeMb).
+  ✔ XHR upload with real progress % → onUploadDocument(file, progress, done).
+  ✔ HARD GATE: Save is dimmed/blocked until done(null, guid) returns a GUID.
+    Blocked click shows reason + ag-shake animation on the Save button.
+  ✔ _finaliseInsert re-applies guid + FileName + FileExtension from
+    _uploadState AFTER _collectFormValues (fixes readonly-input overwrite).
+  ✔ Upload goes to a Generic Handler (.ashx) — WebMethods cannot receive
+    multipart/form-data.
+
+ACTIONS + SERVER INTEGRATION (wired in the page JS)
+  ✔ Action buttons per row with visible: fn(record) conditional display.
+  ✔ Edit / Extract / Map / Generate / Download / Delete all wired to
+    WebMethods through callPageMethod (unwraps ASP.NET { d: "json" }).
+  ✔ Extraction polling: TriggerExtraction → badge "In Progress" →
+    GetExtractionStatus every 5s (max 24 polls / 2 min) → final badge.
+  ✔ Delete removes the row ONLY after server returns Success: true.
+  ✔ Insert/Update patch Id + LastUpdated back into the row via updateRecord.
+  ✔ Download via hidden iframe → DownloadDocument.ashx (blob stream).
+
+CALLBACKS AVAILABLE
+    onLoad · onRowExpand · onRowCollapse · onSave · onDelete · onActionClick
+    onAddNew · onPageChange · onSearch · onSort · onFilterChange · onRefresh
+    onUploadDocument · dataLoader
+
+PUBLIC API
+    loadData(array)          refresh()               resetState()
+    addRecord(rec)           updateRecord(id, patch)  removeRecord(id)
+    getRecord(id)            expandRow(id)            expandRowForEdit(id)
+    collapseRow(id)          collapseAll()            setPage(n)
+    setPageSize(n)           setFilter(v)             setSearch(v)
+
+KNOWN ITEMS / ON THE HORIZON
+  □ Stale-response guard for rapid search keystrokes (sequence-stamp each
+    dataLoader call, ignore responses that aren't the latest). Recommended.
+  □ Verify MailCenter backend rename fully applied (flattener, DTO, repo
+    projection, model class) — grep MailCenterIdInt must return 0 hits.
+
+
+───────────────────────────────────────────────────────────────────────────────
+ PART 2 — THE KEY CONTRACT (read this before adding any field)
+───────────────────────────────────────────────────────────────────────────────
+
+The entire data binding is ONE line:
+
+    var val = record[field.key];
+
+The key string is matched EXACTLY, with no compiler check, in FOUR places.
+All four must agree or the failure is silent:
+
+  1. The server flattener (GetPage projection) — defines the wire name
+  2. editFields  { key: '...' }                — binds the input
+  3. editSections fields: ['...']              — places it in a section
+  4. onSave DTO builder  e.record.XXX          — sends it back
+
+NAMING CONVENTION (all lookup/FK fields):
+    <Name>      = display string   e.g.  ServiceType   = "ADP - UCM"
+    <Name>Id    = numeric FK       e.g.  ServiceTypeId = 8
+
+RULES:
+  • type:'select' fields MUST key on the numeric  <Name>Id  property.
+    The dropdown option values are ints; record[key] must be an int too,
+    or no <option> matches and the browser silently shows the FIRST option.
+  • Never key a select on the display string. It will LOOK correct in view
+    mode (the fallback echoes the raw string) and be WRONG in edit mode.
+  • text / textarea / checkbox / date fields key on their single property
+    directly (Description, Notes, Active…) — no string/id split exists.
+  • Renaming a key = renaming it in ALL FOUR places in the same change.
+
+SILENT FAILURE MODES (what you see when one place is missed):
+  ┌────────────────────────────┬──────────────────────────────────────────┐
+  │ Missed place               │ Symptom                                  │
+  ├────────────────────────────┼──────────────────────────────────────────┤
+  │ editFields only            │ edit dropdowns default to first option   │
+  │ editSections not updated   │ field vanishes from its section (falls   │
+  │                            │ into unlabeled leftover block at bottom) │
+  │ onSave not updated         │ form looks perfect, server receives null │
+  │                            │ (parseInt(undefined) → NaN → || null)    │
+  │ flattener emits other name │ record[key] undefined → blank view "—",  │
+  │                            │ edit shows first option                  │
+  └────────────────────────────┴──────────────────────────────────────────┘
+
+
+───────────────────────────────────────────────────────────────────────────────
+ PART 3 — FIELD CONFIGURATION EXAMPLES (copy-paste patterns)
+───────────────────────────────────────────────────────────────────────────────
+
+3a. TEXT (required, with placeholder)
+    { key: 'Description', label: 'Description', type: 'text',
+      required: true, placeholder: 'Enter description' }
+
+3b. SELECT bound to a lookup (THE standard FK pattern)
+    // record must carry  ServiceTypeId: 8  (int) from the flattener
+    // LOOKUPS.serviceTypes = [ { value: 1, label: 'Full Service' }, ... ]
+    { key: 'ServiceTypeId', label: 'Service Type', type: 'select',
+      options: LOOKUPS.serviceTypes }
+
+3c. SELECT with a STRING value (State — the one legit exception)
+    // Here value IS the string code, matching record.State = "TX"
+    // LOOKUPS.states = [ { value: 'AL', label: 'AL' }, ... ]
+    { key: 'State', label: 'State', type: 'select',
+      options: LOOKUPS.states }
+
+3d. CHECKBOX
+    { key: 'Active', label: 'Active', type: 'checkbox' }
+    // NOTE: input returns true / 'true' / 'on' — coerce in onSave:
+    //   Active: e.record.Active === true || e.record.Active === 'true'
+    //           || e.record.Active === 'on'
+
+3e. READ-ONLY text (written by the upload widget, not the user)
+    { key: 'FileName',          label: 'File Name',          type: 'text', readOnly: true },
+    { key: 'DocumentReference', label: 'Document Reference', type: 'text', readOnly: true }
+    // readOnly (not disabled!) — disabled inputs are excluded from
+    // _collectFormValues and their values would be lost on save.
+
+3f. TEXTAREA spanning the full row width
+    { key: 'Notes', label: 'Notes', type: 'textarea',
+      fullWidth: true, placeholder: 'Optional notes…' }
+
+3g. DATE / NUMBER / EMAIL
+    { key: 'EffectiveDate', label: 'Effective Date', type: 'date' }
+    { key: 'MaxPages',      label: 'Max Pages',      type: 'number' }
+    { key: 'ContactEmail',  label: 'Contact Email',  type: 'email' }
+
+3h. CUSTOM render (full control over the field's HTML)
+    { key: 'Score', label: 'Score', type: 'custom',
+      render: function (field, record) {
+          return '<div class="my-score">' + (record.Score || 0) + ' / 100</div>';
+      } }
+
+3i. onChange hook (react to a field edit live)
+    { key: 'ReturnTypeId', label: 'Return Type', type: 'select',
+      options: LOOKUPS.returnTypes,
+      onChange: function (key, value, record) {
+          console.log(key + ' changed to ' + value + ' on row ' + record.Id);
+      } }
+
+
+───────────────────────────────────────────────────────────────────────────────
+ PART 4 — SECTIONS EXAMPLE (green header groupings)
+───────────────────────────────────────────────────────────────────────────────
+
+Every string in fields:[] must EXACTLY match an editFields key.
+A non-matching string is silently skipped.
+
+    var editSections = [
+        { title: 'Template Info',
+          fields: ['Description', 'State', 'MailCenterId', 'Active'] },
+
+        { title: 'Classification',
+          fields: ['ServiceTypeId', 'FormTypeId', 'FormUseId', 'PoaTypeId'] },
+
+        { title: 'Processing Rules',
+          fields: ['SignatureTypeId', 'ReturnTypeId', 'OnlineRequirementId'] },
+
+        // isDocumentSection: true → the PDF upload widget is injected here
+        { title: 'Document',
+          fields: ['FileName', 'DocumentReference'], isDocumentSection: true },
+
+        { title: 'Notes', fields: ['Notes'] }
+    ];
+
+Fields defined in editFields but listed in NO section render in an unlabeled
+remainder block at the bottom of the panel (this is also where a typo'd
+section entry "sends" a field — check there first when one goes missing).
+
+
+───────────────────────────────────────────────────────────────────────────────
+ PART 5 — COLUMNS EXAMPLE (collapsed row display)
+───────────────────────────────────────────────────────────────────────────────
+
+    var columns = [
+        // plain sortable text
+        { key: 'Description', label: 'Description', sortable: true },
+
+        // fixed width, centered
+        { key: 'State', label: 'State', width: '70px',
+          sortable: true, align: 'center' },
+
+        // badge column: value → css class map
+        { key: 'ExtractionStatus', label: 'Extraction', width: '130px',
+          sortable: true,
+          badge: { map: { 'Completed': 'success', 'In Progress': 'info',
+                          'Not Started': 'default', 'Error': 'danger' },
+                   defaultClass: 'default' } },
+
+        // custom format function (return HTML string)
+        { key: 'Active', label: 'Active', width: '70px', align: 'center',
+          format: function (v) {
+              return v ? '<span class="ag-badge ag-badge-success">Yes</span>'
+                       : '<span class="ag-badge ag-badge-danger">No</span>';
+          } }
+    ];
+
+NOTE: column keys can use the display-string properties (State,
+ExtractionStatus…) — columns just print, they never need to match option
+values. The Id-suffix rule applies to SELECT editFields only.
+
+
+───────────────────────────────────────────────────────────────────────────────
+ PART 6 — ACTION BUTTONS EXAMPLE
+───────────────────────────────────────────────────────────────────────────────
+
+    var actionButtons = [
+        { key: 'edit',    label: 'Edit' },
+        { key: 'extract', label: 'Extract' },
+
+        // conditional visibility per record
+        { key: 'generate', label: 'Generate', cssClass: 'ag-btn-primary',
+          visible: function (r) { return r.MappingStatus === 'Mapped'; } },
+
+        { key: 'download', label: 'Download',
+          visible: function (r) {
+              return !!(r.DocumentReference && r.DocumentReference.length > 0);
+          } },
+
+        { key: 'delete', label: 'Delete', cssClass: 'ag-btn-danger' }
+    ];
+
+    // Clicks arrive in ONE place — route by e.action:
+    onActionClick: function (e) {
+        switch (e.action) {
+            case 'edit':   grid.expandRowForEdit(e.id); break;
+            case 'delete': /* confirm → DeleteForm → grid.removeRecord */ break;
+            // e.id = internal _agId · e.record = full record object
+        }
+    }
+
+
+───────────────────────────────────────────────────────────────────────────────
+ PART 7 — MINIMAL COMPLETE SETUP (new page skeleton)
+───────────────────────────────────────────────────────────────────────────────
+
+    var grid = AccordionGrid.create('myGridDiv', {
+        title: 'My Records',
+        singleExpand: true,
+        expandMode: 'edit',
+        pageSize: 10,
+        pageSizeOptions: [10, 25, 50],
+
+        filterField: 'State',
+        filterOptions: [ { label: 'All', value: '' },
+                         { label: 'TX', value: 'TX' } ],
+
+        columns: columns,             // Part 5
+        editFields: editFields,       // Part 3
+        editSections: editSections,   // Part 4
+        actionButtons: actionButtons, // Part 6
+
+        showInsert: true, showUpdate: true,
+        showDelete: true, showCancel: true,
+
+        // Server-side paging — server owns page/search/sort/filter
+        dataLoader: function (params, done) {
+            // POST params to GetPage WebMethod, then:
+            //   grid._serverTotalCount = payload.totalCount;
+            //   done(payload.items);
+        },
+
+        // Document upload (Add New) — omit entirely if no upload needed;
+        // omitting it also removes the upload widget + the Save gate.
+        uploadDocumentField: 'DocumentReference',
+        uploadMaxSizeMb: 20,
+        uploadAllowedExtensions: ['.pdf'],
+        onUploadDocument: function (file, onProgress, done) {
+            // XHR multipart POST to an .ashx → done(null, guid) on success
+            //                                → done('error msg') on failure
+        },
+
+        onSave: function (e) {
+            // e.isNew → InsertForm, else UpdateForm.
+            // Build DTO reading e.record.<exact editField keys>:
+            //   ServiceTypeId: parseInt(e.record.ServiceTypeId, 10) || null,
+            // Wrap as { form: dto } for WebMethod param binding.
+        },
+
+        onActionClick: function (e) { /* Part 6 routing */ }
+    });
+
+    // First page arrives via hidden field, then:
+    grid._serverTotalCount = initial.totalCount;
+    grid.loadData(initial.items);
+
+
+───────────────────────────────────────────────────────────────────────────────
+ PART 8 — ADD-A-NEW-FIELD CHECKLIST (the 4-place walk)
+───────────────────────────────────────────────────────────────────────────────
+
+Adding e.g. a "Priority" lookup field:
+
+  □ 1. SERVER: add to lookups (LoadLookups → LOOKUPS.priorities) and to the
+       GetPage flattener:   Priority = x.Priority, PriorityId = x.PriorityId
+  □ 2. editFields:
+       { key: 'PriorityId', label: 'Priority', type: 'select',
+         options: LOOKUPS.priorities }
+  □ 3. editSections: add 'PriorityId' to the target section's fields array
+  □ 4. onSave DTO:  PriorityId: parseInt(e.record.PriorityId, 10) || null
+       + add int? PriorityId to PoaFormDto + map to entity column on server
+  □ 5. TEST: arrow-expand (label shows) → Edit (pre-selects) → change + Save
+       → Network tab body has the int, not null → reopen row → persisted
+
+═══════════════════════════════════════════════════════════════════════════════
+ END
+═══════════════════════════════════════════════════════════════════════════════
