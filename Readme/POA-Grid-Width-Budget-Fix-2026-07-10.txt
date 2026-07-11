@@ -1,0 +1,171 @@
+═══════════════════════════════════════════════════════════════════════════════
+ POA FORM MANAGEMENT — ACCORDION GRID
+ FIX: Grid width + column budget — Description column had no room to flex
+ Date: 2026-07-10
+═══════════════════════════════════════════════════════════════════════════════
+
+
+───────────────────────────────────────────────────────────────────────────────
+ 1. THE PROBLEM
+───────────────────────────────────────────────────────────────────────────────
+
+SYMPTOM
+  Setting Description to a fixed width (e.g. 120px) pushed the Actions
+  buttons far to the right, leaving a large dead gap between the data
+  columns and the Edit/Extract/Map/... buttons.
+
+ROOT CAUSE — the width budget was overspent
+  Every row is a flex container. Fixed-width cells (flex:none) take their
+  px; the ONE column left as flex:1 (Description) absorbs whatever space
+  remains inside .page-wrap. Two things broke that:
+
+  1) The container (.page-wrap max-width:1200px) was too narrow. After the
+     UpdatedBy column + a wide Actions column were added, the fixed widths
+     summed to ~1136px — leaving Description almost 0px to flex into.
+
+  2) Giving Description a FIXED width removes the only elastic column.
+     With nothing able to flex, the leftover container space has nowhere
+     to go and pools as a dead gap right before the Actions cell.
+
+KEY INSIGHT
+  Description must stay UNFIXED — it is the elastic column by design.
+  The fix is (a) widen the container and (b) trim the fixed columns so the
+  budget leaves real room for Description, NOT to pin Description's width.
+  Runtime drag-resize (v1.1.0) still lets users size it by hand.
+
+
+───────────────────────────────────────────────────────────────────────────────
+ 2. THE WIDTH BUDGET (the arithmetic behind the fix)
+───────────────────────────────────────────────────────────────────────────────
+
+                        BEFORE        AFTER
+  Container .page-wrap  1200px    →   1400px
+  Usable (after pad)    ~1136px       ~1336px
+  ───────────────────────────────────────────
+  Expander                36            36
+  State                   70            70
+  Extraction             130     →     120
+  Mapping                120     →     110
+  Last Updated           150     →     140
+  Updated By             130     →     110
+  Active                  70            70
+  Actions                430     →     400
+  ───────────────────────────────────────────
+  Fixed total           1136          1056
+  Left for Description   ~0px    →    ~280px   ✔
+
+
+───────────────────────────────────────────────────────────────────────────────
+ 3. CHANGE #1 — Default.aspx: widen container
+───────────────────────────────────────────────────────────────────────────────
+
+BEFORE:
+    .page-wrap { max-width: 1200px; margin: 0 auto; }
+
+AFTER:
+    .page-wrap { max-width: 1400px; margin: 0 auto; }
+
+⚠ PRODUCTION NOTE: if the real page renders inside the C3 Master Page
+  instead of this standalone .page-wrap, apply the widen to whatever
+  container actually constrains the grid there. Same budget math.
+
+
+───────────────────────────────────────────────────────────────────────────────
+ 4. CHANGE #2 — Default.aspx: trim fixed column widths + budget comment
+───────────────────────────────────────────────────────────────────────────────
+
+BEFORE:
+    var columns = [
+        { key: 'Description', label: 'Description', sortable: true },
+        { key: 'State', ... width: '70px' ... },
+        { key: 'ExtractionStatus', ... width: '130px' ... },
+        { key: 'MappingStatus', ... width: '120px' ... },
+        { key: 'LastUpdated', ... width: '150px' ... },
+        { key: 'UpdatedBy', ... width: '130px' ... },
+        { key: 'Active', ... width: '70px' ... }
+    ];
+
+AFTER (widths trimmed; guard comment added above the array):
+    /* WIDTH BUDGET: the row must fit inside .page-wrap. Fixed parts:
+       expander 36 + State 70 + Extraction 120 + Mapping 110 +
+       LastUpdated 140 + UpdatedBy 110 + Active 70 + Actions 400
+       = 1056px. Whatever remains goes to Description (flex).
+       ⚠ Do NOT give Description a fixed width — it is the ONE elastic
+       column that absorbs leftover space. Fixing it means no column
+       can flex and the slack becomes a dead gap before Actions.
+       Users can still drag-resize it live. */
+    var columns = [
+        { key: 'Description', label: 'Description', sortable: true },  // flexible — no width!
+        { key: 'State', ... width: '70px' ... },
+        { key: 'ExtractionStatus', ... width: '120px' ... },
+        { key: 'MappingStatus', ... width: '110px' ... },
+        { key: 'LastUpdated', ... width: '140px' ... },
+        { key: 'UpdatedBy', ... width: '110px' ... },
+        { key: 'Active', ... width: '70px' ... }
+    ];
+
+
+───────────────────────────────────────────────────────────────────────────────
+ 5. CHANGE #3 — Default.aspx: actionsColumnWidth 430 → 400
+───────────────────────────────────────────────────────────────────────────────
+
+BEFORE:
+    resizableColumns: true,
+    actionsColumnWidth: '430px',
+
+AFTER:
+    resizableColumns: true,
+    actionsColumnWidth: '400px',   // snug to fullest row incl. Generate
+
+
+───────────────────────────────────────────────────────────────────────────────
+ 6. CHANGE #4 — AccordionGrid.js: compact action buttons (fit 6 in 400px)
+───────────────────────────────────────────────────────────────────────────────
+
+The full row is Edit+Extract+Map+Generate+Download+Delete (Generate shows
+only when MappingStatus === 'Mapped'). Tighter padding/gap lets all six fit
+a 400px Actions column with no wasted interior space.
+
+.ag-action-btn — BEFORE:
+    padding: 5px 10px;
+.ag-action-btn — AFTER:
+    padding: 5px 8px;   /* compact: full 6-button row fits a snug Actions column */
+
+.ag-cell.ag-col-actions — BEFORE:
+    gap: 5px;
+.ag-cell.ag-col-actions — AFTER:
+    gap: 4px;   /* compact: pairs with tighter .ag-action-btn padding */
+
+DEFAULTS.actionsColumnWidth — BEFORE:
+    actionsColumnWidth: '430px',
+DEFAULTS.actionsColumnWidth — AFTER:
+    actionsColumnWidth: '400px',   // default matches the snug page config
+
+
+───────────────────────────────────────────────────────────────────────────────
+ 7. NOT CHANGED
+───────────────────────────────────────────────────────────────────────────────
+  • Default.aspx.cs — no backend involvement (included for a complete set)
+  • Alignment fix + column resize (v1.1.0) — intact; this only tunes the
+    numbers that feed them
+  • JS syntax verified (node --check passes)
+
+
+───────────────────────────────────────────────────────────────────────────────
+ 8. VERIFICATION CHECKLIST
+───────────────────────────────────────────────────────────────────────────────
+  □ Remove any fixed width from Description in the real page (this was the
+    trigger) — leave it flexible
+  □ Description now has visible width; long text truncates with "…"
+  □ No dead gap between the data columns and the Actions buttons
+  □ On a "Mapped" row (Generate visible): all 6 buttons fill the Actions
+    area edge-to-edge, no wrap, no gap
+  □ On a non-Mapped row (5 buttons): still right-aligned in the same space
+  □ Columns line up under their headers on every row
+  □ Drag-resize Description still works; double-click handle resets it
+  □ If inside the C3 Master Page: widen the real constraining container,
+    not just .page-wrap
+
+═══════════════════════════════════════════════════════════════════════════════
+ END
+═══════════════════════════════════════════════════════════════════════════════

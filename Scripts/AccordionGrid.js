@@ -303,7 +303,7 @@ body.ag-col-resizing {
 .ag-cell.ag-col-actions {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;   /* compact: pairs with tighter .ag-action-btn padding */
     flex-wrap: nowrap;
     overflow: visible;
 }
@@ -313,7 +313,7 @@ body.ag-col-resizing {
     display: inline-flex;
     align-items: center;
     gap: 3px;
-    padding: 5px 10px;
+    padding: 5px 8px;   /* compact: full 6-button row fits a snug Actions column */
     background: var(--ag-btn-bg);
     border: 1px solid var(--ag-btn-border);
     border-radius: var(--ag-radius);
@@ -770,11 +770,13 @@ body.ag-col-resizing {
         // Column layout
         resizableColumns: true,      // Excel-style drag handles on header edges
         minColumnWidth: 60,          // px floor when dragging a column narrower
-        actionsColumnWidth: '430px', // FIXED width for the Actions column.
+        actionsColumnWidth: '400px', // FIXED width for the Actions column.
         // Button sets vary per row (visible: fn),
         // so a constant width is the only way all
         // rows + header compute identical columns.
-        // Size it to the fullest button row.
+        // Sized SNUG to the fullest button row
+        // (incl. Generate) — no dead gap before
+        // the buttons. Re-measure if buttons change.
         // Callbacks
         onLoad: null,
         onRowExpand: null,

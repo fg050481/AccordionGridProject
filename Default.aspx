@@ -19,7 +19,7 @@
             padding: 24px;
             font-size: 13px;
         }
-        .page-wrap { max-width: 1200px; margin: 0 auto; }
+        .page-wrap { max-width: 1400px; margin: 0 auto; }
 
         /* ── "section" chrome that mimics C3 ── */
         .c3-section {
@@ -113,20 +113,29 @@
     (function () {
         'use strict';
 
-        /* ── Columns shown in the collapsed row ─────────────────────── */
+        /* ── Columns shown in the collapsed row ───────────────────────
+           WIDTH BUDGET: the row must fit inside .page-wrap. Fixed parts:
+           expander 36 + State 70 + Extraction 120 + Mapping 110 +
+           LastUpdated 140 + UpdatedBy 110 + Active 70 + Actions 400
+           = 1056px. Whatever remains goes to Description (flex).
+           ⚠ Do NOT give Description a fixed width — it is the ONE
+           elastic column that absorbs leftover space. Fixing it means
+           no column can flex, and the slack becomes a dead gap before
+           the Actions buttons. Users can still drag-resize it live.
+        ──────────────────────────────────────────────────────────── */
         var columns = [
-            { key: 'Description', label: 'Description', sortable: true },
+            { key: 'Description', label: 'Description', sortable: true },   // flexible — no width!
             { key: 'State', label: 'State', width: '70px', sortable: true, align: 'center' },
             {
-                key: 'ExtractionStatus', label: 'Extraction', width: '130px', sortable: true,
+                key: 'ExtractionStatus', label: 'Extraction', width: '120px', sortable: true,
                 badge: { map: { 'Completed': 'success', 'In Progress': 'info', 'Not Started': 'default', 'Error': 'danger' }, defaultClass: 'default' }
             },
             {
-                key: 'MappingStatus', label: 'Mapping', width: '120px', sortable: true,
+                key: 'MappingStatus', label: 'Mapping', width: '110px', sortable: true,
                 badge: { map: { 'Mapped': 'success', 'Partial': 'info', 'Not Mapped': 'default' }, defaultClass: 'default' }
             },
             {
-                key: 'LastUpdated', label: 'Last Updated', width: '150px', sortable: true,
+                key: 'LastUpdated', label: 'Last Updated', width: '140px', sortable: true,
                 align: 'center',
                 format: function (v) {
                     if (!v) return '<span style="color:#9aa09a;font-size:12px;">—</span>';
@@ -138,7 +147,7 @@
                 // Insert/Update — the grid._apply() re-fetch in onSave brings
                 // the fresh value back automatically. Display-only column:
                 // no editField key contract, no DTO field.
-                key: 'UpdatedBy', label: 'Updated By', width: '130px', sortable: true,
+                key: 'UpdatedBy', label: 'Updated By', width: '110px', sortable: true,
                 format: function (v) {
                     if (!v) return '<span style="color:#9aa09a;font-size:12px;">—</span>';
                     return '<span style="font-size:12px;">' + v + '</span>';
@@ -274,12 +283,14 @@
                header to resize (Excel-style); double-click the handle
                to reset that column. Defaults stay aligned regardless
                of text length or button count per row.
-               actionsColumnWidth: FIXED width sized to the fullest
-               button row (Edit+Extract+Map+Generate+Download+Delete).
-               Adjust if buttons are added/removed.
+               actionsColumnWidth: FIXED width, sized SNUG to the
+               fullest button row INCLUDING Generate
+               (Edit+Extract+Map+Generate+Download+Delete).
+               Snug = no dead gap between data columns and buttons.
+               Re-measure if buttons are added/removed.
             ────────────────────────────────────────────────────────*/
             resizableColumns: true,
-            actionsColumnWidth: '430px',
+            actionsColumnWidth: '400px',
 
             /* ── SERVER-SIDE PAGINATION via dataLoader ───────────────
                The grid calls this every time the user pages, searches,
