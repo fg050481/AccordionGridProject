@@ -276,15 +276,24 @@ namespace AccordionGridProject
             var newId = new Random().Next(100, 9999);
             var lastUpdated = DateTime.Now.ToString("MM/dd/yyyy hh:mm tt");
 
+            // UpdatedBy is stamped SERVER-SIDE from the session user — it is
+            // never sent by the client and is NOT a PoaFormDto property.
+            // REAL IMPLEMENTATION (C3):
+            //   var currentUser = HttpContext.Current?.Session?["c3User"] as classC3User;
+            //   entity.updated_by = currentUser != null ? currentUser.DisplayName : "system";
+            var updatedBy = GetCurrentUserName();
+
             System.Diagnostics.Trace.TraceInformation(
                 "[InsertForm] Simulated insert — description={0}, serviceTypeId={1}, " +
-                "poaFormTypeId={2}, state={3}, newId={4}",
-                form.Description, form.ServiceTypeId, form.PoaFormTypeId, form.State, newId);
+                "poaFormTypeId={2}, state={3}, newId={4}, updatedBy={5}",
+                form.Description, form.ServiceTypeId, form.PoaFormTypeId, form.State,
+                newId, updatedBy);
 
             return JsonConvert.SerializeObject(new
             {
                 Id = newId,
-                LastUpdated = lastUpdated
+                LastUpdated = lastUpdated,
+                UpdatedBy = updatedBy
             });
         }
 
@@ -305,14 +314,32 @@ namespace AccordionGridProject
             // ── POC stub ────────────────────────────────────────────────────
             var lastUpdated = DateTime.Now.ToString("MM/dd/yyyy hh:mm tt");
 
+            // Stamp the editor server-side (same pattern as InsertForm).
+            var updatedBy = GetCurrentUserName();
+
             System.Diagnostics.Trace.TraceInformation(
-                "[UpdateForm] Simulated update — id={0}, description={1}",
-                form.Id, form.Description);
+                "[UpdateForm] Simulated update — id={0}, description={1}, updatedBy={2}",
+                form.Id, form.Description, updatedBy);
 
             return JsonConvert.SerializeObject(new
             {
-                LastUpdated = lastUpdated
+                LastUpdated = lastUpdated,
+                UpdatedBy = updatedBy
             });
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // CURRENT USER — POC stub returns a fixed name.
+        //
+        // REAL IMPLEMENTATION (C3WebFramework):
+        //   var currentUser = HttpContext.Current?.Session?["c3User"] as classC3User;
+        //   return currentUser != null ? currentUser.DisplayName : "system";
+        // (Adjust the session key / property to your classC3User definition —
+        //  the same one InsertForm already reads for ProviderUserKey.)
+        // ─────────────────────────────────────────────────────────────────────
+        private static string GetCurrentUserName()
+        {
+            return "developer";   // POC: fixed name so the column is visibly stamped
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -422,7 +449,10 @@ namespace AccordionGridProject
                 x.Notes,
                 LastUpdated = x.LastUpdated.HasValue
                     ? x.LastUpdated.Value.ToString("MM/dd/yyyy hh:mm tt")
-                    : ""
+                    : "",
+                // Display name of the last editor — populated by the server on
+                // Insert/Update (never sent by the client / not on PoaFormDto).
+                UpdatedBy = x.UpdatedBy ?? ""
             }).ToList();
         }
 
@@ -584,6 +614,8 @@ namespace AccordionGridProject
                         all = desc ? all.OrderByDescending(r => r.MappingStatus) : all.OrderBy(r => r.MappingStatus);
                     else if (sortKey == "LastUpdated")
                         all = desc ? all.OrderByDescending(r => r.LastUpdated) : all.OrderBy(r => r.LastUpdated);
+                    else if (sortKey == "UpdatedBy")
+                        all = desc ? all.OrderByDescending(r => r.UpdatedBy) : all.OrderBy(r => r.UpdatedBy);
                     else
                         all = all.OrderBy(r => r.Id);
                 }
@@ -600,18 +632,18 @@ namespace AccordionGridProject
             {
                 return new List<PoaFormModel>
                 {
-                    new PoaFormModel { Id=1,  Description="Texas Individual POA",   State="TX", Active=true,  MailCenterId=10, ServiceType="Full",    FormType="POA",  FormUse="Filing",         PoaType="Tax",       SignatureType="Digital",    OnlineRequirement="None",     ReturnType="Mail",   ExtractionStatus="Completed",  MappingStatus="Mapped",     DocumentReference="REF-TX-001", FileName="tx_poa.pdf",         FileExtension=".pdf", Notes="",                       LastUpdated=new DateTime(2025,5,10,9,30,0) },
-                    new PoaFormModel { Id=2,  Description="California Corp POA",    State="CA", Active=true,  MailCenterId=12, ServiceType="Full",    FormType="2848", FormUse="Representation", PoaType="Tax",       SignatureType="Electronic", OnlineRequirement="Required", ReturnType="E-File", ExtractionStatus="Completed",  MappingStatus="Partial",    DocumentReference="REF-CA-002", FileName="ca_corp_poa.pdf",    FileExtension=".pdf", Notes="Needs review",           LastUpdated=new DateTime(2025,4,22,14,15,0) },
-                    new PoaFormModel { Id=3,  Description="Ohio Tax Authority POA", State="OH", Active=true,  MailCenterId=8,  ServiceType="Partial", FormType="POA",  FormUse="Both",           PoaType="Financial", SignatureType="Wet",        OnlineRequirement="Optional", ReturnType="Fax",    ExtractionStatus="In Progress",MappingStatus="Not Mapped", DocumentReference="REF-OH-003", FileName="oh_poa.pdf",         FileExtension=".pdf", Notes="",                       LastUpdated=new DateTime(2025,5,1,11,0,0) },
-                    new PoaFormModel { Id=4,  Description="Texas Business POA",     State="TX", Active=false, MailCenterId=10, ServiceType="Limited", FormType="8821", FormUse="Filing",         PoaType="Tax",       SignatureType="Digital",    OnlineRequirement="None",     ReturnType="Portal", ExtractionStatus="Not Started",MappingStatus="Not Mapped", DocumentReference="",           FileName="",                   FileExtension="",     Notes="Pending upload",         LastUpdated=null },
-                    new PoaFormModel { Id=5,  Description="California Estate POA",  State="CA", Active=true,  MailCenterId=12, ServiceType="Full",    FormType="POA",  FormUse="Filing",         PoaType="Medical",   SignatureType="Wet",        OnlineRequirement="None",     ReturnType="Mail",   ExtractionStatus="Error",      MappingStatus="Not Mapped", DocumentReference="REF-CA-005", FileName="ca_estate_poa.pdf",  FileExtension=".pdf", Notes="Re-extraction required", LastUpdated=new DateTime(2025,3,18,8,45,0) },
-                    new PoaFormModel { Id=6,  Description="New York IRS POA",       State="NY", Active=true,  MailCenterId=5,  ServiceType="Full",    FormType="2848", FormUse="Representation", PoaType="Tax",       SignatureType="Electronic", OnlineRequirement="Required", ReturnType="E-File", ExtractionStatus="Completed",  MappingStatus="Mapped",     DocumentReference="REF-NY-006", FileName="ny_irs_poa.pdf",     FileExtension=".pdf", Notes="",                       LastUpdated=new DateTime(2025,5,9,16,20,0) },
-                    new PoaFormModel { Id=7,  Description="Florida Medicaid POA",   State="FL", Active=true,  MailCenterId=3,  ServiceType="Full",    FormType="POA",  FormUse="Both",           PoaType="Medical",   SignatureType="Digital",    OnlineRequirement="Optional", ReturnType="Mail",   ExtractionStatus="Not Started",MappingStatus="Not Mapped", DocumentReference="",           FileName="",                   FileExtension="",     Notes="",                       LastUpdated=null },
-                    new PoaFormModel { Id=8,  Description="Ohio Revenue POA",       State="OH", Active=true,  MailCenterId=8,  ServiceType="Partial", FormType="POA",  FormUse="Filing",         PoaType="Tax",       SignatureType="Wet",        OnlineRequirement="None",     ReturnType="Fax",    ExtractionStatus="Completed",  MappingStatus="Partial",    DocumentReference="REF-OH-008", FileName="oh_rev_poa.pdf",     FileExtension=".pdf", Notes="",                       LastUpdated=new DateTime(2025,4,30,10,0,0) },
-                    new PoaFormModel { Id=9,  Description="Georgia State Tax POA",  State="GA", Active=false, MailCenterId=7,  ServiceType="Full",    FormType="8821", FormUse="Filing",         PoaType="Tax",       SignatureType="Electronic", OnlineRequirement="None",     ReturnType="Portal", ExtractionStatus="Not Started",MappingStatus="Not Mapped", DocumentReference="",           FileName="",                   FileExtension="",     Notes="Waiting for approval",   LastUpdated=null },
-                    new PoaFormModel { Id=10, Description="Michigan Business POA",  State="MI", Active=true,  MailCenterId=6,  ServiceType="Limited", FormType="POA",  FormUse="Representation", PoaType="Financial", SignatureType="Digital",    OnlineRequirement="Optional", ReturnType="Mail",   ExtractionStatus="In Progress",MappingStatus="Not Mapped", DocumentReference="REF-MI-010", FileName="mi_biz_poa.pdf",     FileExtension=".pdf", Notes="",                       LastUpdated=new DateTime(2025,5,5,13,10,0) },
-                    new PoaFormModel { Id=11, Description="Washington State POA",   State="WA", Active=true,  MailCenterId=9,  ServiceType="Full",    FormType="POA",  FormUse="Filing",         PoaType="Tax",       SignatureType="Electronic", OnlineRequirement="Required", ReturnType="E-File", ExtractionStatus="Not Started",MappingStatus="Not Mapped", DocumentReference="",           FileName="",                   FileExtension="",     Notes="",                       LastUpdated=null },
-                    new PoaFormModel { Id=12, Description="Illinois Corp Tax POA",  State="IL", Active=true,  MailCenterId=11, ServiceType="Full",    FormType="2848", FormUse="Both",           PoaType="Tax",       SignatureType="Digital",    OnlineRequirement="None",     ReturnType="Mail",   ExtractionStatus="Completed",  MappingStatus="Mapped",     DocumentReference="REF-IL-012", FileName="il_corp_poa.pdf",    FileExtension=".pdf", Notes="",                       LastUpdated=new DateTime(2025,5,8,7,55,0) }
+                    new PoaFormModel { Id=1,  Description="Texas Individual POA",   State="TX", Active=true,  MailCenterId=10, ServiceType="Full",    FormType="POA",  FormUse="Filing",         PoaType="Tax",       SignatureType="Digital",    OnlineRequirement="None",     ReturnType="Mail",   ExtractionStatus="Completed",  MappingStatus="Mapped",     DocumentReference="REF-TX-001", FileName="tx_poa.pdf",         FileExtension=".pdf", Notes="",                       LastUpdated=new DateTime(2025,5,10,9,30,0),  UpdatedBy="developer" },
+                    new PoaFormModel { Id=2,  Description="California Corp POA",    State="CA", Active=true,  MailCenterId=12, ServiceType="Full",    FormType="2848", FormUse="Representation", PoaType="Tax",       SignatureType="Electronic", OnlineRequirement="Required", ReturnType="E-File", ExtractionStatus="Completed",  MappingStatus="Partial",    DocumentReference="REF-CA-002", FileName="ca_corp_poa.pdf",    FileExtension=".pdf", Notes="Needs review",           LastUpdated=new DateTime(2025,4,22,14,15,0), UpdatedBy="akshara koti" },
+                    new PoaFormModel { Id=3,  Description="Ohio Tax Authority POA", State="OH", Active=true,  MailCenterId=8,  ServiceType="Partial", FormType="POA",  FormUse="Both",           PoaType="Financial", SignatureType="Wet",        OnlineRequirement="Optional", ReturnType="Fax",    ExtractionStatus="In Progress",MappingStatus="Not Mapped", DocumentReference="REF-OH-003", FileName="oh_poa.pdf",         FileExtension=".pdf", Notes="",                       LastUpdated=new DateTime(2025,5,1,11,0,0),   UpdatedBy="james gambel" },
+                    new PoaFormModel { Id=4,  Description="Texas Business POA",     State="TX", Active=false, MailCenterId=10, ServiceType="Limited", FormType="8821", FormUse="Filing",         PoaType="Tax",       SignatureType="Digital",    OnlineRequirement="None",     ReturnType="Portal", ExtractionStatus="Not Started",MappingStatus="Not Mapped", DocumentReference="",           FileName="",                   FileExtension="",     Notes="Pending upload",         LastUpdated=null,                            UpdatedBy=null },
+                    new PoaFormModel { Id=5,  Description="California Estate POA",  State="CA", Active=true,  MailCenterId=12, ServiceType="Full",    FormType="POA",  FormUse="Filing",         PoaType="Medical",   SignatureType="Wet",        OnlineRequirement="None",     ReturnType="Mail",   ExtractionStatus="Error",      MappingStatus="Not Mapped", DocumentReference="REF-CA-005", FileName="ca_estate_poa.pdf",  FileExtension=".pdf", Notes="Re-extraction required", LastUpdated=new DateTime(2025,3,18,8,45,0),  UpdatedBy="developer" },
+                    new PoaFormModel { Id=6,  Description="New York IRS POA",       State="NY", Active=true,  MailCenterId=5,  ServiceType="Full",    FormType="2848", FormUse="Representation", PoaType="Tax",       SignatureType="Electronic", OnlineRequirement="Required", ReturnType="E-File", ExtractionStatus="Completed",  MappingStatus="Mapped",     DocumentReference="REF-NY-006", FileName="ny_irs_poa.pdf",     FileExtension=".pdf", Notes="",                       LastUpdated=new DateTime(2025,5,9,16,20,0),  UpdatedBy="akshara koti" },
+                    new PoaFormModel { Id=7,  Description="Florida Medicaid POA",   State="FL", Active=true,  MailCenterId=3,  ServiceType="Full",    FormType="POA",  FormUse="Both",           PoaType="Medical",   SignatureType="Digital",    OnlineRequirement="Optional", ReturnType="Mail",   ExtractionStatus="Not Started",MappingStatus="Not Mapped", DocumentReference="",           FileName="",                   FileExtension="",     Notes="",                       LastUpdated=null,                            UpdatedBy=null },
+                    new PoaFormModel { Id=8,  Description="Ohio Revenue POA",       State="OH", Active=true,  MailCenterId=8,  ServiceType="Partial", FormType="POA",  FormUse="Filing",         PoaType="Tax",       SignatureType="Wet",        OnlineRequirement="None",     ReturnType="Fax",    ExtractionStatus="Completed",  MappingStatus="Partial",    DocumentReference="REF-OH-008", FileName="oh_rev_poa.pdf",     FileExtension=".pdf", Notes="",                       LastUpdated=new DateTime(2025,4,30,10,0,0),  UpdatedBy="james gambel" },
+                    new PoaFormModel { Id=9,  Description="Georgia State Tax POA",  State="GA", Active=false, MailCenterId=7,  ServiceType="Full",    FormType="8821", FormUse="Filing",         PoaType="Tax",       SignatureType="Electronic", OnlineRequirement="None",     ReturnType="Portal", ExtractionStatus="Not Started",MappingStatus="Not Mapped", DocumentReference="",           FileName="",                   FileExtension="",     Notes="Waiting for approval",   LastUpdated=null,                            UpdatedBy=null },
+                    new PoaFormModel { Id=10, Description="Michigan Business POA",  State="MI", Active=true,  MailCenterId=6,  ServiceType="Limited", FormType="POA",  FormUse="Representation", PoaType="Financial", SignatureType="Digital",    OnlineRequirement="Optional", ReturnType="Mail",   ExtractionStatus="In Progress",MappingStatus="Not Mapped", DocumentReference="REF-MI-010", FileName="mi_biz_poa.pdf",     FileExtension=".pdf", Notes="",                       LastUpdated=new DateTime(2025,5,5,13,10,0),  UpdatedBy="developer" },
+                    new PoaFormModel { Id=11, Description="Washington State POA",   State="WA", Active=true,  MailCenterId=9,  ServiceType="Full",    FormType="POA",  FormUse="Filing",         PoaType="Tax",       SignatureType="Electronic", OnlineRequirement="Required", ReturnType="E-File", ExtractionStatus="Not Started",MappingStatus="Not Mapped", DocumentReference="",           FileName="",                   FileExtension="",     Notes="",                       LastUpdated=null,                            UpdatedBy=null },
+                    new PoaFormModel { Id=12, Description="Illinois Corp Tax POA",  State="IL", Active=true,  MailCenterId=11, ServiceType="Full",    FormType="2848", FormUse="Both",           PoaType="Tax",       SignatureType="Digital",    OnlineRequirement="None",     ReturnType="Mail",   ExtractionStatus="Completed",  MappingStatus="Mapped",     DocumentReference="REF-IL-012", FileName="il_corp_poa.pdf",    FileExtension=".pdf", Notes="",                       LastUpdated=new DateTime(2025,5,8,7,55,0),   UpdatedBy="akshara koti" }
                 };
             }
         }
@@ -658,6 +690,7 @@ namespace AccordionGridProject
             public string FileExtension { get; set; }
             public string Notes { get; set; }
             public DateTime? LastUpdated { get; set; }
+            public string UpdatedBy { get; set; }   // display name of last editor
 
             // ── Computed FK ids (POC only) ──────────────────────────────────
             // Map the display value → id using the same ordering as the JS

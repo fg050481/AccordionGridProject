@@ -1,0 +1,457 @@
+═══════════════════════════════════════════════════════════════════════════════
+ POA FORM MANAGEMENT — ACCORDION GRID
+ v1.1.0 — Column alignment fix + Excel-style column resizing
+ + Component functionality, internal flow, and setup guide
+ Date: 2026-07-10
+═══════════════════════════════════════════════════════════════════════════════
+
+
+╔══════════════════════════════════════════════════════════════════════════════
+║ PART A — THE v1.1.0 CHANGES (AccordionGrid.js + Default.aspx)
+╚══════════════════════════════════════════════════════════════════════════════
+
+───────────────────────────────────────────────────────────────────────────────
+ A1. THE ALIGNMENT BUG — ROOT CAUSE
+───────────────────────────────────────────────────────────────────────────────
+
+SYMPTOM
+  Columns drifted per row: a row with a long Description, or with more/fewer
+  action buttons, computed different column positions than its neighbors —
+  data no longer lined up under its header.
+
+ROOT CAUSE (two combined flexbox behaviours)
+  Each .ag-row is its OWN flex container — there is no <table> keeping
+  columns in sync across rows. Alignment only holds if every row runs the
+  exact same flex arithmetic. Two things broke that:
+
+  1) Actions cell was flex:2 but its CONTENT varies per row.
+     Flex items default to min-width:auto → a cell can never shrink below
+     its content. Buttons are white-space:nowrap, so a 6-button row
+     (Edit+Extract+Map+Generate+Download+Delete) forced its Actions cell
+     wider than its flex:2 share, stealing width from Description — in that
+     row only. 4-button rows didn't steal. Header (just the word "Actions")
+     computed a third layout.
+
+  2) Same min-width:auto on data cells.
+     A long Description with nowrap pushed its own row wider even though
+     text-overflow:ellipsis was declared — ellipsis never fired because the
+     cell refused to shrink.
+
+FIX PRINCIPLE
+  Make the flex math IDENTICAL and DETERMINISTIC in every row:
+  fixed-width cells take their px, Actions takes a CONSTANT width, all
+  remaining space goes to Description (flex:1, now allowed to shrink).
+  Same arithmetic in header and all rows → aligned regardless of content.
+
+───────────────────────────────────────────────────────────────────────────────
+ A2. CHANGE #1 — CSS: min-width:0 on cells (AccordionGrid.js)
+───────────────────────────────────────────────────────────────────────────────
+
+BEFORE (.ag-cell):
+    .ag-cell {
+        padding: 10px 8px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        ...
+    }
+
+AFTER:
+    .ag-cell {
+        padding: 10px 8px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        ...
+        min-width: 0;   /* flex default min-width:auto blocks shrink → misaligned rows */
+    }
+
+BEFORE (.ag-header-cell):
+    .ag-header-cell {
+        padding: 10px 8px;
+        ...
+        transition: background .12s;
+    }
+
+AFTER:
+    .ag-header-cell {
+        padding: 10px 8px;
+        ...
+        transition: background .12s;
+        min-width: 0;          /* allow shrink so flex math matches body rows */
+        position: relative;    /* anchor for the resize handle */
+    }
+
+EFFECT: long text now truncates with "…" instead of distorting its row.
+Full text remains visible in the expanded panel.
+
+───────────────────────────────────────────────────────────────────────────────
+ A3. CHANGE #2 — Actions column: flex:2 → FIXED width
+───────────────────────────────────────────────────────────────────────────────
+
+New DEFAULTS (AccordionGrid.js):
+    resizableColumns: true,      // Excel-style drag handles on header edges
+    minColumnWidth: 60,          // px floor when dragging a column narrower
+    actionsColumnWidth: '430px', // FIXED width for the Actions column
+
+_renderHeader — BEFORE:
+    html += '<div class="ag-header-cell ag-col-actions" role="columnheader"
+             style="flex:2;justify-content:flex-end;">Actions</div>';
+
+_renderHeader — AFTER:
+    html += '<div class="ag-header-cell ag-col-actions" role="columnheader"
+             style="flex:none;width:' + cfg.actionsColumnWidth +
+             ';justify-content:flex-end;">Actions</div>';
+
+_buildRow — BEFORE:
+    actCell.style.flex = '2';
+    actCell.style.justifyContent = 'flex-end';
+
+_buildRow — AFTER:
+    actCell.style.flex = 'none';
+    actCell.style.width = cfg.actionsColumnWidth;
+    actCell.style.justifyContent = 'flex-end';
+
+WHY FIXED: button sets vary per row (visible: fn(record)), so a constant
+width is the ONLY way header + every row agree. Rows with fewer buttons
+keep them right-aligned inside the same space (justify-content:flex-end).
+
+SIZING: 430px fits the fullest current row. If buttons are added/removed,
+re-measure a full row in DevTools and adjust actionsColumnWidth in the page
+config (see A6).
+
+BONUS FIX: the old header-cell HTML emitted TWO style attributes (variable
+w + a second style attr). Browsers keep only the first, so header align
+(center/right) was silently dropped. Rebuilt as a single style attribute.
+
+───────────────────────────────────────────────────────────────────────────────
+ A4. CHANGE #3 — NEW: Excel-style column resizing
+───────────────────────────────────────────────────────────────────────────────
+
+USER BEHAVIOUR
+  • Hover the right edge of any column header → col-resize cursor + white
+    edge indicator
+  • Drag → column resizes live; ALL rows realign during the drag
+  • Double-click the handle → that column resets to its configured default
+  • Dragging never triggers the column sort
+  • Widths persist across pagination/refresh/re-render within the session
+  • Floor: minColumnWidth (default 60px)
+
+HOW IT WORKS INTERNALLY (the design worth knowing)
+  Rather than re-rendering rows on every mousemove (expensive), a
+  per-instance <style> element (id: <uid>_colwidths) is created in <head>
+  during _render(). Dragging writes ONE CSS rule per resized column:
+
+      #<containerId> [data-col="Description"] {
+          width: 222px !important;
+          flex: 0 0 222px !important;
+          max-width: 222px !important;
+      }
+
+  [data-col] exists on the header cell AND every body cell, so a single
+  rule realigns the whole grid — the browser recomputes layout, no DOM
+  rebuild. !important beats the cells' inline width/flex styles.
+
+  State: this._colWidths = { columnKey: px }. _applyColWidths() rewrites
+  the stylesheet from that map. Because the stylesheet lives in <head>
+  (not inside the grid container), it survives _renderHeader/_renderBody
+  re-runs — widths persist until reset or page reload.
+
+NEW CODE (summary — full code in AccordionGrid.js v1.1.0):
+  • CSS: .ag-col-resizer (8px hit area, absolute right edge of header cell),
+    hover/active indicator, body.ag-col-resizing cursor lock + user-select
+  • _renderHeader: injects <span class="ag-col-resizer" data-resize="key">
+    per column (not Actions); binds mousedown → document mousemove/mouseup
+    drag; click on handle stopPropagation'd; dblclick resets the column
+  • Sort suppression: _colResizing flag set on mousedown, cleared in a
+    setTimeout(0) AFTER the click the mouseup may produce — the sort
+    handler checks the flag and bails, so ending a drag over a header
+    never toggles sorting
+  • _applyColWidths(): rewrites the dynamic stylesheet from _colWidths
+  • resetColumnWidths(): PUBLIC — clears all user resizes to defaults
+
+PUBLIC API ADDITION:
+    grid.resetColumnWidths();   // all columns back to configured widths
+
+───────────────────────────────────────────────────────────────────────────────
+ A5. NOT CHANGED
+───────────────────────────────────────────────────────────────────────────────
+  • Default.aspx.cs — zero backend involvement in layout
+  • All existing behaviour (view/edit, upload gate, dataLoader, onSave
+    _apply() re-fetch, UpdatedBy column) — untouched
+  • Verified via jsdom smoke test: render OK, 1 handle per column, header
+    and row Actions cells identical fixed width, dynamic rule applies and
+    resets cleanly
+
+───────────────────────────────────────────────────────────────────────────────
+ A6. PAGE CONFIG (Default.aspx) — the only page-side change
+───────────────────────────────────────────────────────────────────────────────
+
+    var grid = AccordionGrid.create('poaGrid', {
+        ...
+        resizableColumns: true,        // default true — set false to disable
+        actionsColumnWidth: '430px',   // re-measure if buttons change
+        ...
+
+───────────────────────────────────────────────────────────────────────────────
+ A7. VERIFICATION CHECKLIST
+───────────────────────────────────────────────────────────────────────────────
+  □ Rows with different button counts (Generate visible vs not): every
+    column lines up under its header
+  □ A very long Description truncates with "…" instead of shifting columns
+  □ Drag Description wider/narrower: all rows follow live during the drag
+  □ Release the drag over the header: sort does NOT toggle
+  □ Double-click a handle: that column returns to its default width
+  □ Resize, then paginate/search/refresh: widths persist
+  □ Cannot drag a column below ~60px
+  □ Header align:center / align:right columns actually render aligned
+    (duplicate-style-attr fix)
+
+
+╔══════════════════════════════════════════════════════════════════════════════
+║ PART B — GRID FUNCTIONALITY (WHAT IT DOES, v1.1.0)
+╚══════════════════════════════════════════════════════════════════════════════
+
+  ✔ Zero-dependency single file: embedded CSS, vanilla JS, ARIA roles,
+    keyboard support on expanders, responsive column collapse on mobile
+  ✔ Columns: width, align, sortable, visible, format functions, badge maps
+  ✔ Column resizing (drag header edge · dblclick reset · resetColumnWidths)
+  ✔ Deterministic column alignment regardless of content or button count
+  ✔ Search (debounced, Esc clears) + filter dropdown + column sort
+  ✔ Pagination: page buttons w/ ellipsis, prev/next, page-size selector
+  ✔ Server-side mode via dataLoader: server owns page/search/sort/filter;
+    DOM only ever holds one page slice → scales to 10k+ records
+  ✔ Row expand: arrow = READ-ONLY view · Edit button = full edit mode
+  ✔ Per-row draft buffer (deepClone) — Cancel discards, Save merges + fires
+  ✔ Add New panel with document upload gate: extension/MIME/size validation,
+    XHR progress, Save locked until the .ashx returns a GUID
+  ✔ Action buttons with per-record visible: fn — routed via onActionClick
+  ✔ updateRecord/removeRecord re-render locally (no re-fetch) for instant
+    badge/status patches; extraction polling flow supported
+  ✔ Refresh button (resetState) + title bar live record count
+  ✔ "Updated By" audit pattern: server-stamped, display-only, re-fetched
+    automatically because onSave calls grid._apply() after confirm
+
+PUBLIC API
+    loadData(array)        refresh()              resetState()
+    addRecord(rec)         updateRecord(id,patch) removeRecord(id)
+    getRecord(id)          expandRow(id)          expandRowForEdit(id)
+    collapseRow(id)        collapseAll()          setPage(n)
+    setPageSize(n)         setFilter(v)           setSearch(v)
+    resetColumnWidths()                                       [NEW v1.1.0]
+
+CALLBACKS
+    onLoad · onRowExpand · onRowCollapse · onSave · onDelete · onActionClick
+    onAddNew · onPageChange · onSearch · onSort · onFilterChange · onRefresh
+    onUploadDocument · dataLoader
+
+
+╔══════════════════════════════════════════════════════════════════════════════
+║ PART C — HOW IT WORKS INTERNALLY (GENERAL FLOW)
+╚══════════════════════════════════════════════════════════════════════════════
+
+───────────────────────────────────────────────────────────────────────────────
+ C1. LIFECYCLE — from page load to rendered grid
+───────────────────────────────────────────────────────────────────────────────
+
+  SERVER (Page_Load → LoadFirstPage)
+    FlattenRecords(page 1) + totalCount ──► HiddenGridData  (hidden field)
+    LoadLookups() {value: FK id, label} ──► HiddenLookups   (hidden field)
+    (RegisterStartupScript window.* variables kept as fallback only)
+
+  PAGE JS
+    LOOKUPS = JSON.parse(HiddenLookups.value)
+    grid    = AccordionGrid.create(containerId, config)
+                └─ constructor: merge config over DEFAULTS (deepClone +
+                   function restore), init state maps, injectCSS(), _render()
+    grid._serverTotalCount = initial.totalCount
+    grid.loadData(initial.items)
+
+  _render() builds the static shell ONCE:
+    loading overlay · col-widths stylesheet · add panel · title bar
+    (Refresh + Add buttons with stable listeners) · toolbar (search/filter)
+    · header row · body · pager
+    → then _renderTitle / _renderHeader / _renderBody / _renderPager fill it.
+
+───────────────────────────────────────────────────────────────────────────────
+ C2. THE CENTRAL NERVE: _apply()
+───────────────────────────────────────────────────────────────────────────────
+
+  EVERY interaction funnels into _apply(): search input, filter change,
+  sort click, setPage, setPageSize, refresh, resetState — and (by our page
+  convention) onSave after Insert/Update confirms.
+
+  _apply() branches ONCE on the mode:
+
+  SERVER-SIDE MODE (dataLoader configured — the production setup):
+      _apply()
+        → _showLoading(true)
+        → dataLoader(_buildParams(), done)
+             params = { page, pageSize, search, filter, sortKey, sortDir }
+             page JS: fetch GetPage WebMethod, unwrap { d: "json" },
+             set grid._serverTotalCount = payload.totalCount,
+             call done(payload.items)
+        → assign _agId to incoming records, _allData = slice
+        → _renderTitle + _renderBody + _renderPager
+      Client-side search/filter/sort are SKIPPED — the server owns them.
+      The pager divides _serverTotalCount by pageSize; the DOM never holds
+      more than one page slice.
+
+  CLIENT-SIDE MODE (no dataLoader — small datasets only):
+      _apply() filters (search across column values), filters (filterField),
+      sorts (string compare) the local _allData copy, then renders. Fine to
+      ~2k records; use server-side beyond that.
+
+  EXCEPTION — updateRecord / removeRecord deliberately DO NOT call _apply()
+  in server-side mode: they patch _allData and re-render locally, so badge
+  flips (extraction polling) are instant without a server round-trip.
+
+───────────────────────────────────────────────────────────────────────────────
+ C3. PER-ROW STATE MAPS
+───────────────────────────────────────────────────────────────────────────────
+
+    _allData            current page slice (server mode) — records get _agId
+    _serverTotalCount   true total from the server — drives the pager
+    _expanded[id]       row open?
+    _editMode[id]       false = read-only view · true = edit panel
+    _editBuffer[id]     deepClone draft; Cancel deletes it, Save merges it
+    _uploadState[key]   {file, guid, uploading, progress, error} — 'new' or id
+    _colWidths[key]     user-resized column px               [NEW v1.1.0]
+    _colResizing        drag-in-progress flag (suppresses sort) [NEW v1.1.0]
+
+───────────────────────────────────────────────────────────────────────────────
+ C4. VIEW vs EDIT — one binding, two renderers
+───────────────────────────────────────────────────────────────────────────────
+
+  Everything binds through ONE line:   var val = buf[field.key];
+
+  ▶ arrow  → _setExpanded(id, open)          → _editMode=false
+  Edit btn → expandRowForEdit → _setExpanded(id, true, true) → _editMode=true
+
+  _buildDetailPanel picks the renderer per field:
+    VIEW: buildViewFieldHtml — static text; selects resolved to the matching
+          option LABEL. ⚠ has a fallback that echoes the raw value when no
+          option matches — this MASKS wrong-key bugs (looks right by accident).
+    EDIT: buildFieldHtml — real inputs; the option whose value === val gets
+          selected. ⚠ no match → browser silently shows the FIRST option.
+
+  Save: _collectFormValues reads every [data-fieldkey] input into the
+  buffer → Object.assign(record, buffer) → fires onSave({record, isNew}).
+  Cancel: buffer deleted, record untouched.
+
+  THE KEY CONTRACT (the #1 source of silent bugs):
+    field.key is matched EXACTLY in 4 places — server flattener property,
+    editFields key, editSections fields[], onSave DTO read. Select fields
+    MUST key on the numeric <Name>Id property (convention: <Name> = display
+    string, <Name>Id = FK int). Server-stamped display fields (UpdatedBy)
+    intentionally skip place 4. Renames go to all places or none.
+
+───────────────────────────────────────────────────────────────────────────────
+ C5. ADD NEW + UPLOAD GATE
+───────────────────────────────────────────────────────────────────────────────
+
+  + Add New → _buildAddPanel from the same editFields/editSections; the
+  upload widget injects into the section flagged isDocumentSection:true.
+
+  choose file → validate extension whitelist + MIME cross-check + max size
+  (all client-side, before any network) → "Upload to Storage" → _doUpload
+  → onUploadDocument(file, onProgress, done) → page JS XHRs multipart to
+  UploadDocument.ashx (WebMethods CANNOT receive multipart) → done(null, guid).
+
+  HARD GATE: Save stays dimmed until a guid exists. On success _doUpload
+  writes guid/FileName/FileExtension into _newBuffer immediately, and
+  _finaliseInsert RE-APPLIES them after _collectFormValues (which would
+  otherwise overwrite them with the empty readonly inputs) → addRecord →
+  fires onSave({isNew:true}).
+
+───────────────────────────────────────────────────────────────────────────────
+ C6. SAVE / ACTION ROUND-TRIPS (page JS conventions)
+───────────────────────────────────────────────────────────────────────────────
+
+  onSave builds a CLEAN DTO (only PoaFormDto fields — e.record also carries
+  _agId etc. that would 500), coerces Active to bool, parseInt's the FK ids,
+  wraps as { form: dto } (WebMethod param binding), POSTs InsertForm /
+  UpdateForm via callPageMethod (unwraps ASP.NET's { d: "json-string" }).
+  ON CONFIRM: grid._apply() → re-fetch current page (keeps page/search/
+  filter/sort) → fresh Id, LastUpdated, UpdatedBy appear automatically.
+
+  onActionClick routes by e.action: edit → expandRowForEdit · extract →
+  TriggerExtraction + 5s status polling (max 2 min) with updateRecord badge
+  flips · delete → server confirms Success:true BEFORE removeRecord ·
+  download → hidden iframe to DownloadDocument.ashx.
+
+
+╔══════════════════════════════════════════════════════════════════════════════
+║ PART D — HOW TO SET IT UP (new page, step by step)
+╚══════════════════════════════════════════════════════════════════════════════
+
+  1. FILES
+     Scripts/AccordionGrid.js (v1.1.0) + a <div id="myGrid"></div> mount +
+     two hidden fields:
+       <asp:HiddenField ID="HiddenGridData" runat="server" ClientIDMode="Static" Value="[]" />
+       <asp:HiddenField ID="HiddenLookups"  runat="server" ClientIDMode="Static" Value="{}" />
+
+  2. CODE-BEHIND
+     Page_Load → LoadFirstPage(): serialize { items: FlattenRecords(page 1),
+     totalCount, pageSize, page:1 } into HiddenGridData; LoadLookups() into
+     HiddenLookups as { lookupName: [ {value, label}, ... ], ... }.
+     WebMethods: GetPage(page, pageSize, search, filter, sortKey, sortDir)
+     returning { items, totalCount }; InsertForm/UpdateForm(PoaFormDto form)
+     returning server-stamped fields; DeleteForm(int Id) returning
+     { Success }. Case-sensitive JSON binding: param must be "Id" not "id".
+     Uploads/downloads: Generic Handlers (.ashx), never WebMethods.
+
+  3. PAGE JS — in order:
+     a. Parse LOOKUPS from HiddenLookups (fallback window.poaLookups)
+     b. Define columns  (display: string props are fine here)
+     c. Define editFields (SELECTS key on <Name>Id — see C4 contract)
+     d. Define editSections (strings must exactly match editField keys)
+     e. Define actionButtons (+ visible: fn where conditional)
+     f. AccordionGrid.create('myGrid', { ...config })
+     g. grid._serverTotalCount = initial.totalCount; grid.loadData(items)
+
+  4. MINIMAL CONFIG SKELETON
+
+     var grid = AccordionGrid.create('myGrid', {
+         title: 'My Records',
+         singleExpand: true,
+         expandMode: 'edit',
+         pageSize: 10, pageSizeOptions: [10, 25, 50],
+         filterField: 'State', filterOptions: [{label:'All', value:''}],
+         columns: columns, editFields: editFields,
+         editSections: editSections, actionButtons: actionButtons,
+         showInsert: true, showUpdate: true, showDelete: true,
+         resizableColumns: true,          // v1.1.0
+         actionsColumnWidth: '430px',     // v1.1.0 — size to fullest button row
+         dataLoader: function (params, done) {
+             // POST params to GetPage; then:
+             // grid._serverTotalCount = payload.totalCount; done(payload.items);
+         },
+         uploadDocumentField: 'DocumentReference',
+         uploadMaxSizeMb: 20, uploadAllowedExtensions: ['.pdf'],
+         onUploadDocument: function (file, onProgress, done) {
+             // XHR multipart → .ashx → done(null, guid) / done('error')
+         },
+         onSave: function (e) {
+             // build clean DTO from e.record.<exact keys>, wrap {form: dto},
+             // InsertForm/UpdateForm → on confirm: grid._apply();
+         },
+         onActionClick: function (e) { /* route by e.action */ }
+     });
+
+  5. ADD-A-FIELD CHECKLIST (the 4-place walk)
+     □ server flattener emits it   □ editFields key
+     □ editSections lists the key  □ onSave DTO reads e.record.<key>
+       (skip place 4 for server-stamped display fields)
+     □ test: view shows → edit pre-selects → Save sends real value
+       (Network tab) → reopen row → persisted
+
+  6. TUNING
+     • actionsColumnWidth: re-measure when buttons change
+     • sortable:true on a column ⇒ add the matching sortKey case server-side
+     • pageSize 10–50 recommended; scale via the server, not the DOM
+     • resetColumnWidths() if you add a "reset layout" affordance
+
+═══════════════════════════════════════════════════════════════════════════════
+ END
+═══════════════════════════════════════════════════════════════════════════════

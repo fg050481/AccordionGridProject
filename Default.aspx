@@ -134,6 +134,17 @@
                 }
             },
             {
+                // Display name of the last editor. Stamped server-side on
+                // Insert/Update — the grid._apply() re-fetch in onSave brings
+                // the fresh value back automatically. Display-only column:
+                // no editField key contract, no DTO field.
+                key: 'UpdatedBy', label: 'Updated By', width: '130px', sortable: true,
+                format: function (v) {
+                    if (!v) return '<span style="color:#9aa09a;font-size:12px;">—</span>';
+                    return '<span style="font-size:12px;">' + v + '</span>';
+                }
+            },
+            {
                 key: 'Active', label: 'Active', width: '70px', align: 'center',
                 format: function (v) {
                     return v
@@ -193,6 +204,9 @@
 
             { key: 'FileName', label: 'File Name', type: 'text', readOnly: true },
             { key: 'DocumentReference', label: 'Document Reference', type: 'text', readOnly: true },
+            // Audit field — server-stamped, never user-editable (readOnly, not
+            // disabled: disabled inputs are skipped by _collectFormValues).
+            { key: 'UpdatedBy', label: 'Updated By', type: 'text', readOnly: true },
             { key: 'Notes', label: 'Notes', type: 'textarea', fullWidth: true, placeholder: 'Optional notes…' }
         ];
 
@@ -201,7 +215,7 @@
             { title: 'Template Info', fields: ['Description', 'State', 'MailCenterId', 'Active'] },
             { title: 'Classification', fields: ['ServiceTypeId', 'PoaFormTypeId', 'FormUseId', 'PoaTypeId'] },
             { title: 'Processing Rules', fields: ['SignatureTypeId', 'ReturnTypeId', 'OnlineRequirementId'] },
-            { title: 'Document', fields: ['FileName', 'DocumentReference'], isDocumentSection: true },
+            { title: 'Document', fields: ['FileName', 'DocumentReference', 'UpdatedBy'], isDocumentSection: true },
             { title: 'Notes', fields: ['Notes'] }
         ];
 
@@ -254,6 +268,18 @@
             showUpdate: true,
             showDelete: true,
             showCancel: true,
+
+            /* ── Column layout ───────────────────────────────────────
+               resizableColumns: drag the right edge of any column
+               header to resize (Excel-style); double-click the handle
+               to reset that column. Defaults stay aligned regardless
+               of text length or button count per row.
+               actionsColumnWidth: FIXED width sized to the fullest
+               button row (Edit+Extract+Map+Generate+Download+Delete).
+               Adjust if buttons are added/removed.
+            ────────────────────────────────────────────────────────*/
+            resizableColumns: true,
+            actionsColumnWidth: '430px',
 
             /* ── SERVER-SIDE PAGINATION via dataLoader ───────────────
                The grid calls this every time the user pages, searches,
@@ -404,22 +430,22 @@
                     // ── INSERT ────────────────────────────────────────────────
                     // ASP.NET WebMethod with a DTO parameter requires the body
                     // wrapped as { "form": { ... } } matching the param name.
+                    // After the server confirms, re-fetch the current page from
+                    // the server (grid._apply keeps page/search/filter/sort) so
+                    // the row shows the true Id, LastUpdated and UpdatedBy.
                     callPageMethod('InsertForm', { form: dto }, function (resp) {
-                        grid.updateRecord(e.record._agId, {
-                            Id: resp.Id,
-                            LastUpdated: resp.LastUpdated
-                        });
                         log('ok', 'INSERT confirmed — newId=' + resp.Id
-                            + '  updated=' + resp.LastUpdated);
+                            + '  updated=' + resp.LastUpdated
+                            + '  by=' + resp.UpdatedBy);
+                        grid._apply();
                     });
                 } else {
                     // ── UPDATE ────────────────────────────────────────────────
                     callPageMethod('UpdateForm', { form: dto }, function (resp) {
-                        grid.updateRecord(e.record._agId, {
-                            LastUpdated: resp.LastUpdated
-                        });
                         log('ok', 'UPDATE confirmed — id=' + e.record.Id
-                            + '  updated=' + resp.LastUpdated);
+                            + '  updated=' + resp.LastUpdated
+                            + '  by=' + resp.UpdatedBy);
+                        grid._apply();
                     });
                 }
             },
