@@ -1,0 +1,369 @@
+═══════════════════════════════════════════════════════════════════════════════
+ POA FORM MANAGEMENT — EXTRACTION PIPELINE
+ ARCHITECTURE + CODE REFERENCE
+ Trigger → Hangfire job → Blob fetch → Azure DI → Normalize → Persist (raw+final)
+ Date: 2026-07-10
+═══════════════════════════════════════════════════════════════════════════════
+
+
+───────────────────────────────────────────────────────────────────────────────
+ 1. PURPOSE
+───────────────────────────────────────────────────────────────────────────────
+
+When a user clicks EXTRACT on a POA template, the system reads the template's
+blank PDF from Azure Blob Storage, runs Azure Document Intelligence
+(prebuilt-layout) to get the raw geometry (pages, lines, words, polygons,
+confidence, tables), NORMALIZES that raw output into a meaningful
+TemplateStructure (field zones, signature areas, coordinate mapping), and
+persists BOTH artifacts:
+
+    • RAW DI JSON          → kept verbatim for future reference: re-normalize
+                             later with an improved engine WITHOUT re-paying
+                             for DI; debugging; auditing what DI actually saw
+    • NORMALIZED JSON      → the TemplateStructure the Mapping step consumes
+
+Cost model reminder (established): DI (+ optional AI classification) runs
+ONCE per template onboarding. Generation runtime uses the saved field-map
+JSON — zero AI cost per generated document.
+
+
+───────────────────────────────────────────────────────────────────────────────
+ 2. FLOW DIAGRAM (end to end)
+───────────────────────────────────────────────────────────────────────────────
+
+ BROWSER (AccordionGrid)                SERVER (C3WebFramework)
+ ───────────────────────                ────────────────────────
+
+ [Extract button]
+        │  onActionClick('extract')
+        ▼
+ callPageMethod ──────────────────────► [WebMethod] TriggerExtraction(Id)
+                                           │ 1. Validate DocumentReference
+                                           │    exists (no blob → error out)
+                                           │ 2. ExtractionStatus="In Progress"
+                                           │    (fast DB write)
+                                           │ 3. Hangfire enqueue
+                                           │    [Queue("poa-extraction")]
+                                           ▼
+        ◄────────────────────  return { JobId, Status:"In Progress" }  (~200ms)
+        │
+ badge flips "In Progress"
+ startExtractionPolling(id)
+        │                               ┌────────────────────────────────────┐
+        │  every 5s (max 24 / 2 min)    │  HANGFIRE BACKGROUND JOB           │
+        ├──────────────────────────────►│  PoaExtractionJob.RunAsync(formId) │
+        │  GetExtractionStatus(Id)      │                                    │
+        │◄──────────────────────────────│  ① FETCH                           │
+        │  { Status }                   │     BlobDocumentService            │
+        │                               │     .GetDocumentAsync(             │
+        │                               │        form.DocumentReference,     │
+        │                               │        container)                  │
+        │                               │     → PDF Stream                   │
+        │                               │        │                           │
+        │                               │  ② RAW EXTRACT                     │
+        │                               │     IDocumentAnalysisService       │
+        │                               │     .AnalyzeAsync(stream,          │
+        │                               │        formType, state)            │
+        │                               │     → Azure DI prebuilt-layout     │
+        │                               │     → RawExtractionResult          │
+        │                               │       (pages/lines/words/polygons/ │
+        │                               │        confidence/tables)          │
+        │                               │        │                           │
+        │                               │  ③ NORMALIZE                       │
+        │                               │     INormalizerService             │
+        │                               │     .Normalize(raw, form)          │
+        │                               │     → TemplateStructure            │
+        │                               │       (field zones, signature      │
+        │                               │        areas, coordinate map)      │
+        │                               │        │                           │
+        │                               │  ④ PERSIST — BOTH                  │
+        │                               │     ITemplateStructureService      │
+        │                               │       .SaveRawAsync(raw)      ─┐   │
+        │                               │       .SaveAsync(structure)   ─┤   │
+        │                               │        │      blob/DB ◄────────┘   │
+        │                               │  ⑤ STATUS                          │
+        │                               │     ExtractionStatus="Completed"   │
+        │                               │                                    │
+        │                               │  catch(ex):                        │
+        │                               │     Status="Error", Log, re-throw  │
+        │                               │     (Hangfire records + retries)   │
+        │                               └────────────────────────────────────┘
+        ▼
+ poll sees "Completed" (or "Error")
+ badge updates → Map button now meaningful
+ (grid._apply() or updateRecord patch per current page convention)
+
+
+───────────────────────────────────────────────────────────────────────────────
+ 3. WHY BACKGROUND JOB (NOT SYNCHRONOUS)
+───────────────────────────────────────────────────────────────────────────────
+
+  Timing per step (typical):   blob fetch 1–5s · DI analysis 5–60s
+                               (page count/complexity) · normalize+save 1–5s
+  A synchronous HTTP call dies at 30–60s (IIS / browser / load balancer).
+  Multi-page POA documents WILL exceed it.
+
+  HANGFIRE gives, on .NET 4.8 inside C3WebFramework (same pattern as UMFax):
+    Retry w/ backoff      transient DI/blob errors retry automatically
+    Dashboard             see running / failed / retried jobs
+    Queue isolation       [Queue("poa-extraction")] separates from other work
+                          (named-queue pattern mirrors poa-single/poa-batch)
+    Persistence           jobs survive IIS app-pool recycles
+
+
+───────────────────────────────────────────────────────────────────────────────
+ 4. COMPONENTS + INTERFACES (all injected via Ninject)
+───────────────────────────────────────────────────────────────────────────────
+
+  IBlobDocumentService        existing — GetDocumentAsync(reference, container)
+                              (same service the upload/download flow uses;
+                               container from FaxConfiguration.
+                               GetAzureDocumentContainerName())
+
+  IDocumentAnalysisService    THE SWAP POINT. One interface, N providers:
+
+      public interface IDocumentAnalysisService
+      {
+          Task<RawExtractionResult> AnalyzeAsync(
+              Stream pdfStream, string formType, string state,
+              CancellationToken ct = default);
+      }
+
+      AzureDocumentIntelligenceService : IDocumentAnalysisService   // primary
+          - prebuilt-layout model
+          - the DocumentExtractor POC's Analyze/ConvertResult code lands here
+      PdfPigTesseractAnalysisService   : IDocumentAnalysisService   // fallback
+          - if Azure DI approval is not granted (established fallback)
+      (AsposeAnalysisService was the earlier candidate — same slot)
+
+      Swapping = one Ninject binding change in NinjectWebCommon.
+      Zero changes to the job.
+
+  INormalizerService          raw geometry → meaning (see section 7)
+
+      public interface INormalizerService
+      {
+          TemplateStructure Normalize(RawExtractionResult raw, PoaFormModel form);
+      }
+
+  ITemplateStructureService   persistence of both artifacts (see section 8)
+
+      public interface ITemplateStructureService
+      {
+          Task SaveRawAsync(int formId, string rawJson);
+          Task SaveAsync(int formId, TemplateStructure structure);
+          Task<TemplateStructure> GetAsync(int formId);
+          Task<string> GetRawAsync(int formId);   // future re-normalization
+      }
+
+  IPoaFormsService            existing — GetByIdAsync, UpdateExtractionStatusAsync
+
+
+───────────────────────────────────────────────────────────────────────────────
+ 5. THE JOB (canonical implementation skeleton)
+───────────────────────────────────────────────────────────────────────────────
+
+    public class PoaExtractionJob : IPoaExtractionJob
+    {
+        private readonly IPoaFormsService          _poaService;
+        private readonly IBlobDocumentService      _blobService;
+        private readonly IDocumentAnalysisService  _analysisService;
+        private readonly INormalizerService        _normalizer;
+        private readonly ITemplateStructureService _structureService;
+
+        // ctor injection via Ninject (job activator)
+
+        [Queue("poa-extraction")]
+        public async Task RunAsync(int formId, CancellationToken ct)
+        {
+            try
+            {
+                // ① FETCH — PDF from blob storage
+                var form      = await _poaService.GetByIdAsync(formId);
+                var container = FaxConfiguration.GetAzureDocumentContainerName();
+                var stream    = await _blobService.GetDocumentAsync(
+                                    form.Document.DocumentReference, container);
+
+                // ② RAW EXTRACT — Azure DI prebuilt-layout (or fallback impl)
+                var raw = await _analysisService.AnalyzeAsync(
+                              stream, form.FormType, form.State, ct);
+
+                // ④a PERSIST RAW FIRST — even if normalize throws, the paid
+                //     DI output is safe and re-normalization stays possible
+                await _structureService.SaveRawAsync(formId, raw.RawJson);
+
+                // ③ NORMALIZE — raw geometry → TemplateStructure
+                var structure = _normalizer.Normalize(raw, form);
+
+                // ④b PERSIST NORMALIZED
+                await _structureService.SaveAsync(formId, structure);
+
+                // ⑤ STATUS
+                await _poaService.UpdateExtractionStatusAsync(
+                          formId, ExtractionStatus.Completed);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Extraction failed for formId={FormId}", formId);
+                await _poaService.UpdateExtractionStatusAsync(
+                          formId, ExtractionStatus.Error);
+                throw;   // re-throw so Hangfire records the failure + retries
+            }
+        }
+    }
+
+  ORDERING NOTE (deliberate): raw is saved BEFORE normalize runs. If the
+  normalizer has a bug, the expensive DI call is not wasted — fix the
+  engine, re-run normalize from the stored raw, never re-invoke DI.
+
+
+───────────────────────────────────────────────────────────────────────────────
+ 6. WEBMETHODS + BROWSER CONTRACT (already wired in the grid page)
+───────────────────────────────────────────────────────────────────────────────
+
+  [WebMethod] TriggerExtraction(int Id)
+      validate DocumentReference → status "In Progress" →
+      BackgroundJob.Enqueue<IPoaExtractionJob>(j => j.RunAsync(Id, default))
+      → return { JobId, Status = "In Progress" }
+      (param MUST be capital-I "Id" — case-sensitive JSON binding)
+
+  [WebMethod] GetExtractionStatus(int Id)
+      read status → return { Status }   // "In Progress" | "Completed" | "Error"
+
+  BROWSER (Default.aspx — existing):
+      case 'extract':
+          TriggerExtraction → grid.updateRecord(id, {ExtractionStatus:'In Progress'})
+          → startExtractionPolling(id): GetExtractionStatus every 5s,
+            max 24 polls (2 min); on terminal status → updateRecord badge flip
+      Polling ceiling exists so an orphaned job can't poll forever; if the
+      2-min window expires while the job still runs, the next manual Refresh
+      (resetState) or page re-fetch picks up the final status from the DB.
+
+
+───────────────────────────────────────────────────────────────────────────────
+ 7. THE NORMALIZE ENGINE (step ③) — design contract
+───────────────────────────────────────────────────────────────────────────────
+
+  INPUT  — RawExtractionResult (provider-shaped, geometry only):
+      Pages[] → Width/Height/Unit/Angle
+             → Lines[]  { Content, Polygon[8], Spans }
+             → Words[]  { Content, Polygon[8], Confidence }
+      Tables[], SelectionMarks[] (checkboxes), RawJson (verbatim provider body)
+
+  The DocumentExtractor POC's ConvertResult (AnalyzeResult → DocumentModel
+  with pages/elements/words/polygon points) is the seed of this stage —
+  it already translates SDK types into an owned model. The engine builds
+  MEANING on top:
+
+  RESPONSIBILITIES (pipeline of passes, each testable in isolation):
+      1. Coordinate normalization  DI polygons (inches/pixels, 4-point) →
+                                   normalized page-relative rects (0..1)
+                                   so zones survive DPI/scaling at render
+      2. Zone detection            fillable areas: underscores/rules, empty
+                                   table cells, wide gaps after label text,
+                                   SelectionMarks → checkbox zones
+      3. Label association         nearest label line (left/above heuristics)
+                                   → zone gets a candidate name
+      4. Classification            candidate name → canonical field type
+                                   (TaxpayerName, SSN/EIN, Address, Date,
+                                   SignatureArea, CheckBox...)
+                                   heuristics first; optional ONE-TIME Azure
+                                   OpenAI pass per template for ambiguous
+                                   labels (two-layer AI decision — onboarding
+                                   cost only, never at generation runtime)
+      5. Signature areas           signature/date line detection (keywords +
+                                   long horizontal rules near page bottom)
+      6. Confidence + review flags zones below threshold marked for the
+                                   Extraction Review screen (draggable
+                                   overlays UI already mocked)
+
+  OUTPUT — TemplateStructure (versioned!):
+      {
+        "schemaVersion": 1,
+        "formId": 113,
+        "engineVersion": "1.0.0",
+        "sourceModel": "prebuilt-layout",
+        "extractedUtc": "2026-07-10T22:00:00Z",
+        "pages": [ { "number":1, "width":8.5, "height":11, "unit":"inch" } ],
+        "fields": [
+          {
+            "key": "TaxpayerName",
+            "label": "Name of Taxpayer",
+            "type": "Text",              // Text|Date|Checkbox|Signature|...
+            "page": 1,
+            "rect": { "x":0.18,"y":0.22,"w":0.45,"h":0.02 },   // normalized
+            "confidence": 0.94,
+            "needsReview": false
+          }
+        ],
+        "signatureAreas": [ ... ],
+        "warnings": [ "page 2: 3 zones below confidence 0.60" ]
+      }
+
+  schemaVersion + engineVersion make stored structures re-processable and
+  comparable when the engine improves.
+
+
+───────────────────────────────────────────────────────────────────────────────
+ 8. PERSISTENCE (step ④) — where the two JSONs live
+───────────────────────────────────────────────────────────────────────────────
+
+  DECISION: blob for payloads, DB row for pointers + status (recommended —
+  raw DI JSON for multi-page docs is easily hundreds of KB to MBs; keep it
+  out of hot DB pages, and the extraction container pairs naturally with the
+  existing document container).
+
+      Blob (extraction container):
+          poa-extraction/{formId}/raw-{yyyyMMddHHmmss}.json
+          poa-extraction/{formId}/structure-v{schemaVersion}-{ts}.json
+      DB (poa_form_extraction):
+          poa_form_id · status · raw_blob_ref · structure_blob_ref
+          engine_version · created/completed timestamps · error_message
+
+  Timestamped names keep HISTORY: re-running extraction never destroys the
+  previous artifacts; the DB row points at the current pair.
+
+  (Alternative if ops prefers: NVARCHAR(MAX) columns via Dapper — fine for
+  structure JSON, gets heavy for raw. Pointer model scales better.)
+
+
+───────────────────────────────────────────────────────────────────────────────
+ 9. DOCUMENTEXTRACTOR POC → PRODUCTION SERVICE (gap list)
+───────────────────────────────────────────────────────────────────────────────
+
+  POC already proves: DI client call, prebuilt-layout analysis, polygon +
+  confidence capture, AnalyzeResult → owned DocumentModel conversion,
+  JSON serialization of the converted model.
+
+  To productionize:
+  □ Signature: file path → Stream (job hands a blob stream)
+  □ Keep the VERBATIM provider response as RawJson alongside the converted
+    model (POC currently serializes only the converted model)
+  □ Wrap in AzureDocumentIntelligenceService : IDocumentAnalysisService
+  □ ⚠ SECURITY: endpoint + API key are HARDCODED in the POC Program.cs and
+    have been shared in files/screenshots → ROTATE THE KEY in the Azure
+    portal now, then load from config (web.config appSettings; Key Vault
+    preferred). Never commit keys.
+  □ Retarget/reference so it runs under the .NET 4.8 Hangfire host
+    (UM.POA.Infrastructure pattern — same EF6-compat reasoning as before)
+  □ Cancellation token + timeout around the DI call
+  □ Map DI SDK exceptions → domain errors (auth vs transient vs bad PDF)
+    so Hangfire retries only what's retryable
+
+───────────────────────────────────────────────────────────────────────────────
+ 10. BUILD ORDER (suggested next steps)
+───────────────────────────────────────────────────────────────────────────────
+  1. Rotate + externalize the DI key (5 minutes, do first)
+  2. RawExtractionResult + IDocumentAnalysisService; port POC code into
+     AzureDocumentIntelligenceService (stream input, RawJson preserved)
+  3. TemplateStructure model + ITemplateStructureService (blob + DB row)
+  4. NormalizerService v1: passes 1–3 + 5 heuristics only (no AI), flag
+     everything ambiguous needsReview=true — Review screen absorbs the slack
+  5. PoaExtractionJob + Hangfire wiring (queue "poa-extraction", Ninject
+     bindings) → swap the TriggerExtraction/GetExtractionStatus POC stubs
+     for the real enqueue/status reads
+  6. Classification pass v2 (optional AI assist) once v1 accuracy is known
+
+═══════════════════════════════════════════════════════════════════════════════
+ END
+═══════════════════════════════════════════════════════════════════════════════

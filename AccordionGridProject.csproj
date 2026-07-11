@@ -74,6 +74,7 @@
     <Content Include="Diagrams\AccordionGrid-Flow-Diagram.svg" />
     <Content Include="Readme\LookupImplementation.txt" />
     <Content Include="Readme\POA Grid ExtractionFlow 2026_06_25.txt" />
+    <Content Include="Readme\POA-Extraction-Pipeline-Architecture-2026-07-10.txt" />
     <Content Include="Readme\POA-Grid-EditFields-Id-Suffix-Fix-2026-07-04.txt" />
     <Content Include="Readme\POA-Grid-TemplateGridComponent-2026-06-25.txt" />
     <Content Include="Readme\POA-Grid-v1.1.0-Resize-Alignment-And-Reference-2026-07-10.txt" />
